@@ -1,0 +1,59 @@
+<main class="login-page">
+  <section class="login-hero">
+    <div class="hero-grid"></div>
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
+
+    <div class="hero-content">
+      <div class="hero-badge">
+        <img src="assets/sig-cotacao-mark.png" alt="SIG Cotação" />
+        <span>SIG Cotação</span>
+      </div>
+
+      <h1>Controle operacional das integrações em um só lugar.</h1>
+      <p>Monitore serviços, acompanhe logs, consulte arquivos, pedidos e rotinas de execução com segurança.</p>
+
+      <div class="hero-cards">
+        <div><strong>SSH</strong><small>execução remota</small></div>
+        <div><strong>Logs</strong><small>acompanhamento vivo</small></div>
+        <div><strong>API</strong><small>status em tempo real</small></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="login-panel">
+    <form class="login-card" (ngSubmit)="entrar()">
+      <div class="login-brand">
+        <img src="assets/sig-cotacao-mark.png" alt="SIG Cotação" />
+        <div>
+          <small>Painel operacional</small>
+          <strong>SIG Cotação</strong>
+        </div>
+      </div>
+
+      <div class="login-heading">
+        <h2>Acesso ao painel</h2>
+        <p>Informe a URL do backend e o token configurado no ambiente.</p>
+      </div>
+
+      <label>URL do backend</label>
+      <div class="input-line">
+        <span>↗</span>
+        <input name="apiUrl" [(ngModel)]="apiUrl" placeholder="http://localhost:3001" />
+      </div>
+
+      <label>Token de acesso</label>
+      <div class="input-line">
+        <span>●</span>
+        <input name="token" [(ngModel)]="token" type="password" placeholder="Digite o token de acesso" />
+      </div>
+
+      <button type="submit" [disabled]="carregando || !token.trim()">
+        {{ carregando ? 'Validando acesso...' : 'Acessar painel' }}
+      </button>
+
+      <div *ngIf="erro" class="erro">{{ erro }}</div>
+      <small class="version">SIG Cotação • Integrações Cotefácil / SmartPed</small>
+    </form>
+  </section>
+</main>

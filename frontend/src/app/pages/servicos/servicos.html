@@ -1,0 +1,79 @@
+<div class="page-title service-title">
+  <div>
+    <span class="eyebrow">Painel operacional</span>
+    <h2>Serviços e Execuções</h2>
+    <p>Monitore os processos da integração, execute rotinas e acompanhe os logs em tempo real.</p>
+  </div>
+  <div class="title-actions">
+    <span class="last-update" *ngIf="ultimaAtualizacao">Atualizado {{ ultimaAtualizacao | date:'HH:mm:ss' }}</span>
+    <button class="btn-primary" type="button" (click)="carregar()" [disabled]="carregando">
+      {{ carregando ? 'Atualizando...' : 'Atualizar' }}
+    </button>
+  </div>
+</div>
+
+<div *ngIf="erro" class="state-card error">{{ erro }}</div>
+
+<section class="service-grid" *ngIf="servicos.length; else semServicos">
+  <article class="service-card" *ngFor="let item of servicos; trackBy: trackServico" [class.online]="item.online">
+    <div class="service-icon" [class.good]="item.online">
+      <span *ngIf="item.chave === 'geracao'">▣</span>
+      <span *ngIf="item.chave === 'exclusao'">✕</span>
+      <span *ngIf="item.chave === 'pedidos'">↗</span>
+    </div>
+
+    <div class="service-head">
+      <div>
+        <h3>{{ item.nome }}</h3>
+        <p>{{ item.script || item.jar || item.chave }}</p>
+      </div>
+      <span class="badge" [class.good]="item.online" [class.bad]="!item.online">
+        <i></i>{{ item.online ? 'Online' : 'Offline' }}
+      </span>
+    </div>
+
+    <div class="service-meta">
+      <div>
+        <small>Servidor</small>
+        <strong>{{ item.servidor || '-' }}</strong>
+      </div>
+      <div>
+        <small>Porta</small>
+        <strong>{{ item.porta || '-' }}</strong>
+      </div>
+      <div>
+        <small>PID porta</small>
+        <strong>{{ item.pids.length ? item.pids.join(', ') : '-' }}</strong>
+      </div>
+      <div>
+        <small>PID painel</small>
+        <strong>{{ item.pidPainel || '-' }}</strong>
+      </div>
+    </div>
+
+    <div class="service-actions">
+      <button type="button" class="btn-primary" (click)="iniciar(item.chave)" [disabled]="carregando">Iniciar</button>
+      <button type="button" class="btn-secondary" (click)="parar(item.chave)" [disabled]="carregando">Parar pelo painel</button>
+      <button type="button" class="btn-secondary" (click)="selecionarLog(item.chave)">Ver log</button>
+    </div>
+  </article>
+</section>
+
+<ng-template #semServicos>
+  <div class="state-card empty">Nenhum serviço carregado ainda. Clique em <strong>Atualizar</strong>.</div>
+</ng-template>
+
+<section class="panel-log">
+  <div class="panel-header">
+    <div>
+      <span class="eyebrow">Monitoramento</span>
+      <h3>Log em tempo real</h3>
+      <p>Atualização automática a cada poucos segundos.</p>
+    </div>
+    <select [(ngModel)]="servicoLogSelecionado" (change)="carregarLogs()">
+      <option *ngFor="let item of servicos" [value]="item.chave">{{ item.nome }}</option>
+    </select>
+  </div>
+
+  <pre>{{ logs.length ? logs.join('\n') : (carregandoLogs ? 'Carregando logs...' : 'Nenhum log carregado ainda.') }}</pre>
+</section>

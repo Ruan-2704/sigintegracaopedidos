@@ -1,0 +1,27 @@
+<div class="page-title">
+  <div><h2>Logs Operacionais</h2><p>Linha do tempo da integração: arquivos, pedidos e movimentações recentes.</p></div>
+  <button type="button" class="btn-primary" (click)="carregar()" [disabled]="carregando">{{ carregando ? 'Atualizando...' : 'Atualizar' }}</button>
+</div>
+
+<section class="filters-card">
+  <div class="field grow"><label>Busca</label><input type="text" placeholder="Buscar por tipo, campanha ou descrição" [(ngModel)]="filtro" (keyup.enter)="aplicarFiltro()" /></div>
+  <div class="filter-actions"><button class="btn-primary" type="button" (click)="aplicarFiltro()">Filtrar</button><button class="btn-secondary" type="button" (click)="limparFiltro()" *ngIf="filtro">Limpar</button></div>
+</section>
+
+<div class="summary-line"><span><strong>{{ totalRegistros }}</strong> eventos monitorados</span><span *ngIf="ultimaAtualizacao">Atualizado em {{ ultimaAtualizacao | date:'dd/MM/yyyy HH:mm:ss' }}</span></div>
+<div *ngIf="carregando" class="state-card">Carregando logs...</div>
+<div *ngIf="!carregando && erro" class="state-card error">{{ erro }}</div>
+<div *ngIf="!carregando && !erro && logs.length === 0" class="state-card">Nenhum log encontrado.</div>
+
+<div class="timeline" *ngIf="!carregando && !erro && logs.length > 0">
+  <div class="event" *ngFor="let log of logs">
+    <div class="event-dot" [class.file]="log.tipo === 'ARQUIVO_GERADO'"></div>
+    <div class="event-card">
+      <div class="event-top"><span class="badge" [class.good]="log.status === 'SUCESSO'">{{ log.tipo }}</span><strong>{{ log.data | date:'dd/MM/yyyy HH:mm:ss' }}</strong></div>
+      <p>{{ log.descricao }}</p>
+      <small>Campanha: {{ log.campanha || '-' }} • Referência: {{ log.referencia || '-' }}</small>
+    </div>
+  </div>
+</div>
+
+<div class="pagination" *ngIf="!carregando && logs.length > 0"><button type="button" class="btn-secondary" (click)="paginaAnterior()" [disabled]="paginaAtual === 1">Anterior</button><span>Página {{ paginaAtual }} de {{ totalPaginas }}</span><button type="button" class="btn-secondary" (click)="proximaPagina()" [disabled]="paginaAtual === totalPaginas">Próxima</button></div>

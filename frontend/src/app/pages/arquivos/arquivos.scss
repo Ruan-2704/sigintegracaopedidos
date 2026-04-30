@@ -1,0 +1,45 @@
+.page-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+.page-title h2 { margin: 0; color: var(--sig-blue); font-size: 32px; }
+.page-title p { margin: 6px 0 0; color: var(--sig-muted); }
+.filters-card { background: #fff; border-radius: 10px; padding: 18px; display: flex; gap: 14px; align-items: flex-end; box-shadow: var(--sig-shadow-soft); margin-bottom: 14px; flex-wrap: wrap; }
+.filters-card.compact-grid { display: grid; grid-template-columns: 1.4fr .8fr .9fr .8fr .7fr .7fr .5fr auto; }
+.field { display: grid; gap: 7px; min-width: 160px; }
+.field.grow { flex: 1; min-width: 320px; }
+.small-field { min-width: 110px; }
+.field label { color: #475569; font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.field input, .field select { border: 1px solid #cbd5e1; border-radius: 11px; padding: 12px 13px; outline: none; color: var(--sig-text); background: #fff; }
+.field input:focus, .field select:focus { border-color: var(--sig-blue); box-shadow: 0 0 0 3px rgba(11,92,173,.12); }
+.filter-actions, .actions { display: flex; gap: 8px; align-items: center; }
+.summary-line { display: flex; gap: 18px; color: var(--sig-muted); margin: 14px 0 16px; }
+.summary-line strong { color: var(--sig-blue); }
+.btn-primary, .btn-secondary, .btn-table, .btn-danger { border: 0; border-radius: 10px; cursor: pointer; font-weight: 800; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
+.btn-primary { background: var(--sig-blue); color: #fff; padding: 11px 16px; }
+.btn-secondary { background: #eef0f8; color: var(--sig-text); padding: 10px 14px; }
+.btn-table { background: var(--sig-blue); color: #fff; padding: 9px 13px; }
+.btn-danger { background: #dc2626; color: #fff; padding: 9px 13px; }
+.small { padding: 9px 12px; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+.table-card { background: #fff; border-radius: 10px; overflow: auto; box-shadow: var(--sig-shadow-soft); border: 1px solid #eef0f8; }
+table { width: 100%; min-width: 1100px; border-collapse: collapse; }
+th { background: var(--sig-blue); color: #fff; text-align: left; padding: 15px; font-size: 13px; position: sticky; top: 0; }
+td { padding: 14px 15px; border-bottom: 1px solid #eef0f8; color: #334155; font-size: 13px; max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+td small { display: block; color: #94a3b8; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; }
+tbody tr:hover { background: #f1f7ff; }
+.badge { border-radius: 999px; padding: 5px 10px; font-weight: 800; font-size: 12px; display: inline-flex; align-items: center; }
+.badge.good { background: #dcfce7; color: #166534; }
+.badge.neutral { background: #dbeafe; color: #1d4ed8; }
+.state-card { background: #fff; padding: 22px; border-radius: 16px; box-shadow: var(--sig-shadow-soft); }
+.state-card.error { background: #fee2e2; color: #991b1b; }
+.pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 16px; color: #475569; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.58); display: flex; align-items: center; justify-content: center; z-index: 999; padding: 24px; }
+.modal { background: #fff; border-radius: 10px; padding: 22px; overflow: auto; box-shadow: 0 24px 60px rgba(0,0,0,.25); }
+.modal.large { width: 1050px; max-width: 96vw; max-height: 88vh; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.modal-header h2 { margin: 0; color: var(--sig-blue); }
+.modal-header p { margin: 5px 0 0; color: var(--sig-muted); }
+pre { background: var(--sig-text); color: #dbeafe; padding: 18px; border-radius: 14px; overflow: auto; font-size: 12px; line-height: 1.5; }
+@media (max-width: 1200px) { .filters-card.compact-grid { grid-template-columns: 1fr 1fr; } }
+.btn-primary, .btn-table { background: var(--sig-blue); box-shadow: 0 8px 16px rgba(48,63,159,.14); }
+.btn-secondary { background: #eef0f8; color: var(--sig-blue); }
+th { background: var(--sig-blue); }
+.table-card, .filters-card { border-radius: 10px; }

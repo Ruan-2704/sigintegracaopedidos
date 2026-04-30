@@ -1,0 +1,45 @@
+<div class="page-title">
+  <div>
+    <h2>Pedidos Inseridos</h2>
+    <p>Pedidos confirmados pelas integrações SmartPed / Cotefácil.</p>
+  </div>
+  <button type="button" class="btn-primary" (click)="carregar()" [disabled]="carregando">{{ carregando ? 'Atualizando...' : 'Atualizar' }}</button>
+</div>
+
+<section class="filters-card compact-grid">
+  <div class="field grow"><label>Busca geral</label><input type="text" placeholder="Carrinho, campanha, integradora..." [(ngModel)]="filtro" (keyup.enter)="aplicarFiltro()" /></div>
+  <div class="field"><label>Campanha</label><input type="text" placeholder="Id campanha" [(ngModel)]="filtroCampanha" (keyup.enter)="aplicarFiltro()" /></div>
+  <div class="field"><label>CNPJ</label><input type="text" placeholder="Loja ou distribuidor" [(ngModel)]="filtroCnpj" (keyup.enter)="aplicarFiltro()" /></div>
+  <div class="field"><label>Integradora</label><select [(ngModel)]="filtroIntegradora"><option value="">Todas</option><option value="SMARTPED">SMARTPED</option><option value="COTEFACIL">COTEFACIL</option></select></div>
+  <div class="field"><label>Data inicial</label><input type="date" [(ngModel)]="dataInicio" /></div>
+  <div class="field"><label>Data final</label><input type="date" [(ngModel)]="dataFim" /></div>
+  <div class="field small-field"><label>Itens</label><select [(ngModel)]="itensPorPagina" (change)="alterarItensPorPagina()"><option [ngValue]="10">10</option><option [ngValue]="20">20</option><option [ngValue]="50">50</option></select></div>
+  <div class="filter-actions"><button class="btn-primary" type="button" (click)="aplicarFiltro()">Filtrar</button><button class="btn-secondary" type="button" (click)="limparFiltro()">Limpar</button></div>
+</section>
+
+<div class="summary-line"><span><strong>{{ totalRegistros }}</strong> pedidos encontrados</span><span *ngIf="ultimaAtualizacao">Atualizado em {{ ultimaAtualizacao | date:'dd/MM/yyyy HH:mm:ss' }}</span></div>
+<div *ngIf="carregando" class="state-card">Carregando pedidos...</div>
+<div *ngIf="!carregando && erro" class="state-card error">{{ erro }}</div>
+<div *ngIf="!carregando && !erro && pedidos.length === 0" class="state-card">Nenhum pedido encontrado.</div>
+
+<div class="table-card" *ngIf="!carregando && !erro && pedidos.length > 0">
+  <table>
+    <thead><tr><th>Código</th><th>Carrinho</th><th>CNPJ Loja</th><th>CNPJ Distribuidor</th><th>Campanha</th><th>Pedido Integrador</th><th>Integradora</th><th>Data</th><th>Ação</th></tr></thead>
+    <tbody>
+      <tr *ngFor="let item of pedidos">
+        <td>{{ item.codigo }}</td>
+        <td><strong>{{ item.numeroCarrinhoDeCompras }}</strong></td>
+        <td>{{ item.CnpjCliente }}</td>
+        <td>{{ item.CnpjDistribuidor }}</td>
+        <td><span class="badge neutral">{{ item.IdCampanha }}</span><small>{{ item.NomeCampanha }}</small></td>
+        <td>{{ item.pedidoIntegradora }}</td>
+        <td><span class="badge good">{{ item.integradora || '-' }}</span></td>
+        <td>{{ item.dataPedido | date:'dd/MM/yyyy HH:mm' }}</td>
+        <td><button type="button" class="btn-table" (click)="visualizar(item)">Ver</button></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="pagination"><button type="button" class="btn-secondary" (click)="paginaAnterior()" [disabled]="paginaAtual === 1">Anterior</button><span>Página {{ paginaAtual }} de {{ totalPaginas }}</span><button type="button" class="btn-secondary" (click)="proximaPagina()" [disabled]="paginaAtual === totalPaginas">Próxima</button></div>
+</div>
+
+<div class="modal-backdrop" *ngIf="selecionado"><div class="modal large"><div class="modal-header"><div><h2>Detalhes do Pedido</h2><p>Registro {{ selecionado.codigo }}</p></div><button type="button" class="btn-secondary" (click)="fechar()">Fechar</button></div><pre>{{ selecionado | json }}</pre></div></div>

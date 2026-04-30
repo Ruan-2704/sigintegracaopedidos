@@ -1,0 +1,63 @@
+<div class="shell" [class.sidebar-collapsed]="!menuAberto">
+  <header class="topbar">
+    <div class="brand-inline">
+      <button class="menu-toggle" type="button" (click)="toggleMenu()" [attr.aria-label]="menuAberto ? 'Fechar menu' : 'Abrir menu'">
+        <span *ngIf="menuAberto">×</span>
+        <span *ngIf="!menuAberto">☰</span>
+      </button>
+
+      <div class="brand-mark">
+        <img src="assets/sig-cotacao-mark.png" alt="SIG Cotação" />
+      </div>
+
+      <div class="brand-text">
+        <strong>SIG Cotação</strong>
+        <small>Central Cotefácil / SmartPed</small>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <button class="refresh" type="button" (click)="verificarStatus()">Atualizar status</button>
+
+      <span class="status-pill" [class.bad]="status === 'erro' || banco === 'erro' || bucket === 'erro'">
+        <span></span>{{ status === 'erro' ? 'Offline' : 'Online' }}
+      </span>
+
+      <button class="user-pill" type="button">ADMIN</button>
+    </div>
+  </header>
+
+  <aside class="sidebar" [class.open]="menuAberto">
+    <div class="sidebar-title">
+      <strong>Dashboard</strong>
+      <small>Página inicial</small>
+    </div>
+
+    <nav class="nav">
+      <a routerLink="/dashboard" routerLinkActive="active"><span>▦</span>Dashboard</a>
+      <a routerLink="/servicos" routerLinkActive="active"><span>⚙</span>Serviços e Execuções</a>
+      <a routerLink="/arquivos" routerLinkActive="active"><span>▣</span>Arquivos Gerados</a>
+      <a routerLink="/pedidos" routerLinkActive="active"><span>🛒</span>Pedidos Inseridos</a>
+      <a routerLink="/logs" routerLinkActive="active"><span>◷</span>Logs Operacionais</a>
+      <a routerLink="/cron" routerLinkActive="active"><span>↻</span>Crontab</a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="mini-status">
+        <span class="dot" [class.error]="status === 'erro' || banco === 'erro' || bucket === 'erro'"></span>
+        <div>
+          <strong>{{ status | titlecase }}</strong>
+          <small>Banco: {{ banco }} • Bucket: {{ bucket }}</small>
+        </div>
+      </div>
+
+      <button class="logout" type="button" (click)="sair()">Sair do painel</button>
+    </div>
+  </aside>
+
+  <main class="content" [class.menu-open]="menuAberto">
+    <section class="page-wrapper">
+      <router-outlet></router-outlet>
+    </section>
+  </main>
+</div>

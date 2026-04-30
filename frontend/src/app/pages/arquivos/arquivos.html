@@ -1,0 +1,80 @@
+<div class="page-title">
+  <div>
+    <h2>Arquivos Gerados</h2>
+    <p>Arquivos JSON gerados e enviados para o bucket da integração.</p>
+  </div>
+  <button type="button" class="btn-primary" (click)="carregar()" [disabled]="carregando">{{ carregando ? 'Atualizando...' : 'Atualizar' }}</button>
+</div>
+
+<section class="filters-card">
+  <div class="field grow">
+    <label>Busca geral</label>
+    <input type="text" placeholder="Campanha, nome do arquivo ou data" [(ngModel)]="filtro" (keyup.enter)="aplicarFiltro()" />
+  </div>
+  <div class="field small-field">
+    <label>Itens por página</label>
+    <select [(ngModel)]="itensPorPagina" (change)="alterarItensPorPagina()">
+      <option [ngValue]="10">10</option>
+      <option [ngValue]="20">20</option>
+      <option [ngValue]="50">50</option>
+    </select>
+  </div>
+  <div class="filter-actions">
+    <button class="btn-primary" type="button" (click)="aplicarFiltro()">Filtrar</button>
+    <button class="btn-secondary" type="button" (click)="limparFiltro()" *ngIf="filtro">Limpar</button>
+  </div>
+</section>
+
+<div class="summary-line">
+  <span><strong>{{ totalRegistros }}</strong> arquivos encontrados</span>
+  <span *ngIf="ultimaAtualizacao">Atualizado em {{ ultimaAtualizacao | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+</div>
+
+<div *ngIf="carregando" class="state-card">Carregando arquivos do bucket...</div>
+<div *ngIf="!carregando && erro" class="state-card error">{{ erro }}</div>
+<div *ngIf="!carregando && !erro && arquivos.length === 0" class="state-card">Nenhum arquivo encontrado.</div>
+
+<div class="table-card" *ngIf="!carregando && !erro && arquivos.length > 0">
+  <table>
+    <thead>
+      <tr>
+        <th>Arquivo</th>
+        <th>Campanha</th>
+        <th>Tamanho</th>
+        <th>Criado em</th>
+        <th>Atualizado em</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let item of arquivos">
+        <td><strong>{{ item.nomeArquivo }}</strong><small>{{ item.bucket }}</small></td>
+        <td><span class="badge neutral">{{ item.campanha }}</span></td>
+        <td>{{ formatarTamanho(item.tamanhoBytes) }}</td>
+        <td>{{ item.criadoEm | date:'dd/MM/yyyy HH:mm' }}</td>
+        <td>{{ item.atualizadoEm | date:'dd/MM/yyyy HH:mm' }}</td>
+        <td class="actions">
+          <button type="button" class="btn-table" (click)="visualizar(item)">Visualizar</button>
+          <a [href]="item.linkDownload" target="_blank" class="btn-secondary small">Download</a>
+          <button type="button" class="btn-danger" (click)="excluir(item)">Excluir</button>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="pagination">
+    <button type="button" class="btn-secondary" (click)="paginaAnterior()" [disabled]="paginaAtual === 1">Anterior</button>
+    <span>Página {{ paginaAtual }} de {{ totalPaginas }}</span>
+    <button type="button" class="btn-secondary" (click)="proximaPagina()" [disabled]="paginaAtual === totalPaginas">Próxima</button>
+  </div>
+</div>
+
+<div class="modal-backdrop" *ngIf="selecionado">
+  <div class="modal large">
+    <div class="modal-header">
+      <div><h2>{{ selecionado.nomeArquivo }}</h2><p>Campanha {{ selecionado.campanha }}</p></div>
+      <button type="button" class="btn-secondary" (click)="fechar()">Fechar</button>
+    </div>
+    <div *ngIf="carregandoPreview" class="state-card">Carregando prévia do arquivo...</div>
+    <pre *ngIf="!carregandoPreview">{{ previewArquivo | json }}</pre>
+  </div>
+</div>
