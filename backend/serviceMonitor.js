@@ -125,9 +125,43 @@ function extrairTrechoErro(log = '') {
   return linhas.slice(-40).join('\n').slice(-2500);
 }
 
+function normalizarErroParaAssinatura(log = '') {
+  const texto = String(log || '').toLowerCase();
+
+  if (texto.includes('java.lang.indexoutofboundsexception')) {
+    return 'java.lang.indexoutofboundsexception';
+  }
+
+  if (texto.includes('java.lang.nullpointerexception')) {
+    return 'java.lang.nullpointerexception';
+  }
+
+  if (texto.includes('java.sql.sqlexception') || texto.includes('sqlexception')) {
+    return 'java.sql.sqlexception';
+  }
+
+  if (texto.includes('connection refused')) {
+    return 'connection refused';
+  }
+
+  if (texto.includes('connectexception')) {
+    return 'connectexception';
+  }
+
+  if (texto.includes('timeout') || texto.includes('timed out')) {
+    return 'timeout';
+  }
+
+  return extrairTrechoErro(log)
+    .replace(/\d{4}-\d{2}-\d{2}t?\d{2}:\d{2}:\d{2}[^\s]*/gi, '')
+    .replace(/\bnio-\d+-exec-\d+\b/gi, '')
+    .replace(/\b\d+\b/g, '')
+    .trim();
+}
+
 function gerarAssinaturaErro(log = '') {
-  const trecho = extrairTrechoErro(log);
-  return crypto.createHash('sha1').update(trecho).digest('hex');
+  const base = normalizarErroParaAssinatura(log);
+  return crypto.createHash('sha1').update(base).digest('hex');
 }
 
 async function notificarServico(chave, servico, tipo, mensagem, detalhe) {

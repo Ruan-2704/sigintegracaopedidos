@@ -173,4 +173,15 @@ export class IntegracaoService {
   salvarCron(crontab: string): Observable<ApiResponse<any>> {
     return this.postRaw<ApiResponse<any>>('/cron', { crontab });
   }
+
+  validarPedido(
+    payload: any,
+    options: { rede?: string; validarBanco?: boolean } = {}
+  ): Observable<ApiResponse<any>> {
+    return this.postRaw<ApiResponse<any>>('/validador/pedido', {
+      payload,
+      rede: options.rede,
+      validarBanco: options.validarBanco !== false
+    });
+  }
 }

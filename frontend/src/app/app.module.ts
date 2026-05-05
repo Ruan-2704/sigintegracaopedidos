@@ -12,6 +12,7 @@ import { LayoutComponent } from './layout/layout/layout';
 import { DashboardComponent } from './pages/dashboard/dashboard';
 import { ArquivosComponent } from './pages/arquivos/arquivos';
 import { PedidosComponent } from './pages/pedidos/pedidos';
+import { ValidadorPedidoComponent } from './pages/validador-pedido/validador-pedido';
 import { LogsComponent } from './pages/logs/logs';
 import { LoginComponent } from './pages/login/login';
 import { ServicosComponent } from './pages/servicos/servicos';
@@ -24,6 +25,7 @@ import { CronComponent } from './pages/cron/cron';
     DashboardComponent,
     ArquivosComponent,
     PedidosComponent,
+    ValidadorPedidoComponent,
     LogsComponent,
     LoginComponent,
     ServicosComponent,

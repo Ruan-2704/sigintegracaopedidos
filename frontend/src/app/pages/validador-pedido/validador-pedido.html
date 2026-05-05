@@ -1,0 +1,132 @@
+<section class="page-title">
+  <div>
+    <span class="eyebrow">Diagnóstico operacional</span>
+    <h2>Validador de Pedido</h2>
+    <p>Cole o JSON enviado para a API de pedidos e identifique campos ausentes, vínculos inválidos e possíveis causas de erro.</p>
+  </div>
+</section>
+
+<div class="validator-grid">
+  <section class="card input-card">
+    <div class="card-header">
+      <div>
+        <h3>JSON do pedido</h3>
+        <p>Use o payload recebido da Cotefácil/SmartPed ou o JSON gravado no log.</p>
+      </div>
+
+      <button class="btn-secondary" type="button" (click)="carregarExemplo()">Exemplo</button>
+    </div>
+
+    <div class="form-row">
+      <label>
+        Rede/base para cruzamento
+        <select [(ngModel)]="rede" [disabled]="carregandoBases">
+          <option value="" disabled>
+            {{ carregandoBases ? 'Carregando bases...' : 'Selecione uma base' }}
+          </option>
+
+          <option *ngFor="let base of bases" [value]="base.nome">
+            {{ base.nome }}
+          </option>
+        </select>
+      </label>
+
+      <label class="check-field">
+        <input type="checkbox" [(ngModel)]="validarBanco" />
+        Validar vínculos no banco
+      </label>
+    </div>
+
+    <textarea
+      [(ngModel)]="jsonPedido"
+      spellcheck="false"
+      placeholder="Cole aqui o JSON completo do pedido..."
+    ></textarea>
+
+    <div class="actions">
+      <button class="btn-primary" type="button" (click)="validar()" [disabled]="carregando">
+        {{ carregando ? 'Validando...' : 'Validar pedido' }}
+      </button>
+
+      <button class="btn-secondary" type="button" (click)="limpar()" [disabled]="carregando">
+        Limpar
+      </button>
+    </div>
+
+    <div class="error-box" *ngIf="erro">{{ erro }}</div>
+  </section>
+
+  <section class="card result-card" *ngIf="resultado">
+    <div class="result-summary" [class.ok]="resultado.resumo?.valido" [class.bad]="!resultado.resumo?.valido">
+      <div>
+        <span class="eyebrow">Resultado</span>
+        <h3>{{ resultado.resumo?.valido ? 'Pedido apto para teste' : 'Corrigir antes de reenviar' }}</h3>
+        <p>Rede analisada: <strong>{{ resultado.rede }}</strong></p>
+      </div>
+
+      <div class="summary-numbers">
+        <strong>{{ resultado.resumo?.erros || 0 }}</strong><small>erros</small>
+        <strong>{{ resultado.resumo?.avisos || 0 }}</strong><small>avisos</small>
+      </div>
+    </div>
+
+    <div class="diagnostic-strip" *ngIf="resultado?.checks?.length">
+      <div>
+        <strong>Base</strong>
+        <span>{{ resultado.rede }}</span>
+      </div>
+
+      <div>
+        <strong>Status</strong>
+        <span>{{ resultado.resumo?.valido ? 'Apto' : 'Com pendências' }}</span>
+      </div>
+
+      <div>
+        <strong>Validações</strong>
+        <span>{{ resultado.checks.length }} checks executados</span>
+      </div>
+    </div>
+
+    <div class="section-block" *ngIf="resultado.proximosPassos?.length">
+      <h4>Próximos passos</h4>
+      <ul>
+        <li *ngFor="let passo of resultado.proximosPassos">{{ passo }}</li>
+      </ul>
+    </div>
+
+    <div class="section-block" *ngIf="resultado.issues?.length">
+      <h4>Problemas encontrados</h4>
+
+      <div class="issue" *ngFor="let issue of resultado.issues; trackBy: trackIssue">
+        <span class="badge" [ngClass]="badgeClass(issue.severity)">
+          {{ issue.severity }}
+        </span>
+
+        <div>
+          <strong>{{ issue.message }}</strong>
+          <small>{{ issue.field }} • {{ issue.code }}</small>
+          <p>{{ issue.suggestion }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-block" *ngIf="resultado.checks?.length">
+      <h4>Validações no banco</h4>
+
+      <div class="check" *ngFor="let check of resultado.checks; trackBy: trackCheck" [class.ok]="check.ok" [class.bad]="!check.ok">
+        <div>
+          <strong>{{ check.nome }}</strong>
+          <p>{{ check.message }}</p>
+          <small *ngIf="check.error">Erro técnico: {{ check.error }}</small>
+        </div>
+
+        <span>{{ check.ok ? 'OK' : 'Falhou' }}</span>
+      </div>
+    </div>
+
+    <details class="section-block">
+      <summary>JSON normalizado</summary>
+      <pre>{{ resultado.normalizado | json }}</pre>
+    </details>
+  </section>
+</div>

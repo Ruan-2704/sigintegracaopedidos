@@ -38,6 +38,7 @@ const { enviarAlertaOperacional, listarAlertas, garantirTabelaAlertas } = requir
 const { detectarErroLog } = require('./serviceMonitor');
 
 const pool = require('./db');
+const { validarPedido } = require('./pedidoValidator');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -310,15 +311,6 @@ function base64url(input) {
     .replace(/\//g, '_');
 }
 
-function base64url(input) {
-  return Buffer
-    .from(input)
-    .toString('base64')
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
-}
-
 function criarToken(payload) {
   const body = base64url(JSON.stringify(payload));
   const signature = crypto.createHmac('sha256', APP_SECRET).update(body).digest('base64url');
@@ -345,7 +337,7 @@ function validarToken(token) {
 }
 
 function authMiddleware(req, res, next) {
-  const publicPaths = ['/health', '/auth/login'];
+  const publicPaths = ['/health', '/auth/login', '/validador/bases'];
 
   if (publicPaths.includes(req.path)) {
     return next();
@@ -1598,6 +1590,65 @@ app.post('/proxy/enviapedido', async (req, res) => {
       message: 'Erro ao comunicar com endpoint externo',
       error: error.message,
     });
+  }
+});
+
+/* =========================
+   VALIDADOR DE PEDIDO
+========================= */
+
+
+app.get('/validador/bases', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        s.SCHEMA_NAME AS nome
+      FROM INFORMATION_SCHEMA.SCHEMATA s
+      WHERE s.SCHEMA_NAME NOT IN (
+        'information_schema',
+        'mysql',
+        'performance_schema',
+        'sys',
+        'administrador',
+        'gestao',
+        'integracaopedidos'
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM INFORMATION_SCHEMA.TABLES t
+        WHERE t.TABLE_SCHEMA = s.SCHEMA_NAME
+          AND t.TABLE_NAME = 'farmacias'
+      )
+      ORDER BY s.SCHEMA_NAME
+    `);
+
+    return res.json({
+      success: true,
+      data: rows
+    });
+  } catch (error) {
+    return erroResponse(res, 500, 'Erro ao listar bases disponíveis', error);
+  }
+});
+
+app.post('/validador/pedido', authMiddleware, async (req, res) => {
+  try {
+    const payload = req.body?.payload ?? req.body?.pedido ?? req.body;
+    const rede = req.body?.rede || req.query?.rede || process.env.VALIDADOR_REDE_DEFAULT || 'redecomprecerto';
+    const validarBanco = req.body?.validarBanco !== false;
+
+    const resultado = await validarPedido(payload, {
+      pool,
+      rede,
+      validarBanco,
+    });
+
+    return res.json({
+      success: true,
+      data: resultado,
+    });
+  } catch (error) {
+    return erroResponse(res, 500, 'Erro ao validar pedido', error);
   }
 });
 
