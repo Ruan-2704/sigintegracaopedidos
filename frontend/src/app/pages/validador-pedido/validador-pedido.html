@@ -20,15 +20,7 @@
     <div class="form-row">
       <label>
         Rede/base para cruzamento
-        <select [(ngModel)]="rede" [disabled]="carregandoBases">
-          <option value="" disabled>
-            {{ carregandoBases ? 'Carregando bases...' : 'Selecione uma base' }}
-          </option>
-
-          <option *ngFor="let base of bases" [value]="base.nome">
-            {{ base.nome }}
-          </option>
-        </select>
+        <input type="text" [(ngModel)]="rede" placeholder="redemgfarma" />
       </label>
 
       <label class="check-field">
@@ -70,23 +62,6 @@
       </div>
     </div>
 
-    <div class="diagnostic-strip" *ngIf="resultado?.checks?.length">
-      <div>
-        <strong>Base</strong>
-        <span>{{ resultado.rede }}</span>
-      </div>
-
-      <div>
-        <strong>Status</strong>
-        <span>{{ resultado.resumo?.valido ? 'Apto' : 'Com pendências' }}</span>
-      </div>
-
-      <div>
-        <strong>Validações</strong>
-        <span>{{ resultado.checks.length }} checks executados</span>
-      </div>
-    </div>
-
     <div class="section-block" *ngIf="resultado.proximosPassos?.length">
       <h4>Próximos passos</h4>
       <ul>
@@ -99,8 +74,8 @@
 
       <div class="issue" *ngFor="let issue of resultado.issues; trackBy: trackIssue">
         <span class="badge" [ngClass]="badgeClass(issue.severity)">
-          {{ issue.severity }}
-        </span>
+  {{ issue.severity }}
+</span>
 
         <div>
           <strong>{{ issue.message }}</strong>

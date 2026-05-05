@@ -337,7 +337,7 @@ function validarToken(token) {
 }
 
 function authMiddleware(req, res, next) {
-  const publicPaths = ['/health', '/auth/login', '/validador/bases'];
+  const publicPaths = ['/health', '/auth/login'];
 
   if (publicPaths.includes(req.path)) {
     return next();
@@ -1596,40 +1596,6 @@ app.post('/proxy/enviapedido', async (req, res) => {
 /* =========================
    VALIDADOR DE PEDIDO
 ========================= */
-
-
-app.get('/validador/bases', async (req, res) => {
-  try {
-    const [rows] = await pool.query(`
-      SELECT 
-        s.SCHEMA_NAME AS nome
-      FROM INFORMATION_SCHEMA.SCHEMATA s
-      WHERE s.SCHEMA_NAME NOT IN (
-        'information_schema',
-        'mysql',
-        'performance_schema',
-        'sys',
-        'administrador',
-        'gestao',
-        'integracaopedidos'
-      )
-      AND EXISTS (
-        SELECT 1
-        FROM INFORMATION_SCHEMA.TABLES t
-        WHERE t.TABLE_SCHEMA = s.SCHEMA_NAME
-          AND t.TABLE_NAME = 'farmacias'
-      )
-      ORDER BY s.SCHEMA_NAME
-    `);
-
-    return res.json({
-      success: true,
-      data: rows
-    });
-  } catch (error) {
-    return erroResponse(res, 500, 'Erro ao listar bases disponíveis', error);
-  }
-});
 
 app.post('/validador/pedido', authMiddleware, async (req, res) => {
   try {
