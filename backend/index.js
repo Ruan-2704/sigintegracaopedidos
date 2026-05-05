@@ -27,6 +27,7 @@ const {
   lerCrontab,
   salvarCrontab,
   listarPidsPorPorta,
+  listarPidsPorNome,
   matarPidsPorPorta,
   lerLogRemoto,
 } = require('./remoteExecution');
@@ -126,6 +127,26 @@ async function safePidsServico(chave) {
   if (!servico) return [];
 
   try {
+    if (chave === 'pedidos') {
+      const [pidsPorta, pidsJar] = await Promise.all([
+        timeoutPromise(
+          listarPidsPorPorta(servico.porta, alvoServico(chave)),
+          SSH_STATUS_TIMEOUT_MS,
+          `consulta de porta ${chave}`
+        ),
+        timeoutPromise(
+          listarPidsPorNome(servico.jar, alvoServico(chave)),
+          SSH_STATUS_TIMEOUT_MS,
+          `consulta de processo ${chave}`
+        ),
+      ]);
+
+      const portaOk = Array.isArray(pidsPorta) ? pidsPorta : [];
+      const jarOk = Array.isArray(pidsJar) ? pidsJar : [];
+
+      return portaOk.filter((pid) => jarOk.includes(pid));
+    }
+
     const pids = await timeoutPromise(
       listarPidsPorPorta(servico.porta, alvoServico(chave)),
       SSH_STATUS_TIMEOUT_MS,
@@ -134,7 +155,7 @@ async function safePidsServico(chave) {
 
     return Array.isArray(pids) ? pids : [];
   } catch (error) {
-    console.error(`Erro ao listar PIDs do serviço ${chave} porta ${servico.porta}:`, error.message);
+    console.error(`Erro ao listar PIDs do serviço ${chave}:`, error.message);
     return [];
   }
 }
@@ -167,56 +188,67 @@ async function consultarStatusServicos({ force = false, detectarQueda = true } =
 
   const data = {
     geracao: {
-      nome: SERVICOS.geracao.nome,
-      script: SERVICOS.geracao.script,
-      porta: SERVICOS.geracao.porta,
-      servidor: servidorServico('geracao'),
-      online: geracaoPids.length > 0,
-      pids: geracaoPids,
-      target: 'files',
-    },
+  nome: SERVICOS.geracao.nome,
+  script: SERVICOS.geracao.script,
+  porta: SERVICOS.geracao.porta,
+  servidor: servidorServico('geracao'),
+  tipo: 'job',
+  online: geracaoPids.length > 0,
+  statusOperacional: geracaoPids.length > 0 ? 'executando' : 'aguardando execução',
+  pids: geracaoPids,
+  target: 'files',
+},
     exclusao: {
-      nome: SERVICOS.exclusao.nome,
-      script: SERVICOS.exclusao.script,
-      porta: SERVICOS.exclusao.porta,
-      servidor: servidorServico('exclusao'),
-      online: exclusaoPids.length > 0,
-      pids: exclusaoPids,
-      target: 'files',
-    },
-    pedidos: {
-      nome: SERVICOS.pedidos.nome,
-      jar: SERVICOS.pedidos.jar,
-      porta: SERVICOS.pedidos.porta,
-      servidor: servidorServico('pedidos'),
-      online: pedidosPids.length > 0,
-      pids: pedidosPids,
-      target: 'pedidos',
-    },
+  nome: SERVICOS.exclusao.nome,
+  script: SERVICOS.exclusao.script,
+  porta: SERVICOS.exclusao.porta,
+  servidor: servidorServico('exclusao'),
+  tipo: 'job',
+  online: exclusaoPids.length > 0,
+  statusOperacional: exclusaoPids.length > 0 ? 'executando' : 'aguardando execução',
+  pids: exclusaoPids,
+  target: 'files',
+},
+  pedidos: {
+  nome: SERVICOS.pedidos.nome,
+  jar: SERVICOS.pedidos.jar,
+  porta: SERVICOS.pedidos.porta,
+  servidor: servidorServico('pedidos'),
+  tipo: 'servico',
+  online: pedidosPids.length > 0,
+  statusOperacional: pedidosPids.length > 0 ? 'online' : 'offline',
+  pids: pedidosPids,
+  target: 'pedidos',
+},
   };
 
-  if (detectarQueda) {
-    for (const key of Object.keys(data)) {
-      const atualOnline = data[key].online;
-      const anteriorOnline = ultimoStatusServicos[key];
+if (detectarQueda) {
+  for (const key of Object.keys(data)) {
+    const atualOnline = data[key].online;
+    const anteriorOnline = ultimoStatusServicos[key];
 
-      if (anteriorOnline === true && atualOnline === false && !houveAcaoManualRecente(key)) {
-        enviarAlertaOperacional({
-          servico: data[key].nome,
-          tipo: 'SERVICO_OFFLINE',
-          severidade: 'ALERTA',
-          mensagem: `O serviço ${data[key].nome} ficou offline.`,
-          servidor: data[key].servidor,
-          porta: data[key].porta,
-          assunto: `🚨 Serviço offline - ${data[key].nome}`,
-        }).catch((error) => {
-          console.error(`Falha ao enviar alerta offline ${key}:`, error.message);
-        });
-      }
-
+    if (key !== 'pedidos') {
       ultimoStatusServicos[key] = atualOnline;
+      continue;
     }
+
+    if (anteriorOnline === true && atualOnline === false && !houveAcaoManualRecente(key)) {
+      enviarAlertaOperacional({
+        servico: data[key].nome,
+        tipo: 'SERVICO_OFFLINE',
+        severidade: 'ALERTA',
+        mensagem: `O serviço ${data[key].nome} ficou offline.`,
+        servidor: data[key].servidor,
+        porta: data[key].porta,
+        assunto: `🚨 Serviço offline - ${data[key].nome}`,
+      }).catch((error) => {
+        console.error(`Falha ao enviar alerta offline ${key}:`, error.message);
+      });
+    }
+
+    ultimoStatusServicos[key] = atualOnline;
   }
+}
 
   const payload = {
     atualizadoEm: new Date().toISOString(),
@@ -599,86 +631,15 @@ app.get('/health', async (req, res) => {
 
 app.get('/servicos/status', authMiddleware, async (req, res) => {
   try {
-    const safePids = async (porta, target) => {
-      try {
-        return await listarPidsPorPorta(porta, target);
-      } catch (error) {
-        console.error(`Erro ao listar PIDs porta ${porta} target ${target}:`, error.message);
-        return [];
-      }
-    };
+    const payload = await consultarStatusServicos({
+      force: true,
+      detectarQueda: false,
+    });
 
-    const geracaoPids = await safePids(SERVICOS.geracao.porta, 'files');
-    const exclusaoPids = await safePids(SERVICOS.exclusao.porta, 'files');
-    const pedidosPids = await safePids(SERVICOS.pedidos.porta, 'pedidos');
-
-    const data = {
-      geracao: {
-        nome: SERVICOS.geracao.nome,
-        script: SERVICOS.geracao.script,
-        porta: SERVICOS.geracao.porta,
-        servidor: process.env.SSH_FILES_HOST,
-        online: geracaoPids.length > 0,
-        pids: geracaoPids,
-      },
-      exclusao: {
-        nome: SERVICOS.exclusao.nome,
-        script: SERVICOS.exclusao.script,
-        porta: SERVICOS.exclusao.porta,
-        servidor: process.env.SSH_FILES_HOST,
-        online: exclusaoPids.length > 0,
-        pids: exclusaoPids,
-      },
-      pedidos: {
-        nome: SERVICOS.pedidos.nome,
-        jar: SERVICOS.pedidos.jar,
-        porta: SERVICOS.pedidos.porta,
-        servidor: process.env.SSH_PEDIDOS_HOST,
-        online: pedidosPids.length > 0,
-        pids: pedidosPids,
-      },
-    };
-
-    const ultimoStatusServicos = global.ultimoStatusServicos || {};
-    global.ultimoStatusServicos = ultimoStatusServicos;
-
-    for (const key of Object.keys(data)) {
-      const atualOnline = data[key].online;
-      const anteriorOnline = ultimoStatusServicos[key];
-
-      ultimoStatusServicos[key] = atualOnline;
-    }
-
-    for (const key of Object.keys(data)) {
-      try {
-        const servicoAtual = data[key];
-        const target = key === 'pedidos' ? 'pedidos' : 'files';
-        const scriptOuJar = servicoAtual.script || servicoAtual.jar;
-        if (!scriptOuJar) continue;
-
-        const log = await lerLogRemoto(scriptOuJar, 80, target);
-        const erroDetectado = detectarErroLog(log);
-
-        if (erroDetectado && !ultimoErroDetectado[key]) {
-          await enviarAlertaOperacional({
-            servico: servicoAtual.nome,
-            tipo: 'ERRO_LOG',
-            severidade: 'ERRO',
-            mensagem: `Erro detectado no serviço ${servicoAtual.nome}.`,
-            detalhe: String(log || '').slice(-2500),
-            servidor: servicoAtual.servidor,
-            porta: servicoAtual.porta,
-            assunto: `🚨 Erro detectado - ${servicoAtual.nome}`,
-          });
-        }
-
-        ultimoErroDetectado[key] = erroDetectado;
-      } catch (error) {
-        console.error(`Erro ao analisar log do serviço ${key}:`, error.message);
-      }
-    }
-
-    return res.json({ success: true, data });
+    return res.json({
+      success: true,
+      data: payload.data,
+    });
   } catch (error) {
     return erroResponse(res, 500, 'Erro ao consultar status dos serviços', error);
   }
@@ -714,12 +675,7 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
       data: result,
     });
   } catch (error) {
-    try {
-      await enviarEmailAlerta({
-        assunto: '[SIG Cotação] Erro ao iniciar geração',
-        texto: error.message,
-      });
-    } catch {}
+  
 
     return res.status(500).json({
       success: false,
@@ -739,13 +695,6 @@ app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
       data: result,
     });
   } catch (error) {
-    try {
-      await enviarEmailAlerta({
-        assunto: '[SIG Cotação] Erro ao iniciar exclusão',
-        texto: error.message,
-      });
-    } catch {}
-
     return res.status(500).json({
       success: false,
       message: 'Erro ao iniciar exclusão',
@@ -764,13 +713,6 @@ app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
       data: result,
     });
   } catch (error) {
-    try {
-      await enviarEmailAlerta({
-        assunto: '[SIG Cotação] Erro ao iniciar exclusão',
-        texto: error.message,
-      });
-    } catch {}
-
     return res.status(500).json({
       success: false,
       message: 'Erro ao iniciar exclusão',

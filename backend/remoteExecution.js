@@ -140,6 +140,20 @@ async function listarPidsPorPorta(port, target = 'files') {
     .filter(Boolean);
 }
 
+async function listarPidsPorNome(processName, target = 'files') {
+  if (!processName) return [];
+
+  const stdout = await executarComando(
+    `pgrep -f ${shellEscape(processName)} 2>/dev/null || true`,
+    target
+  );
+
+  return String(stdout || '')
+    .split('\n')
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
 async function matarPidsPorPorta(port, target = 'files') {
   const pids = await listarPidsPorPorta(port, target);
 
@@ -158,14 +172,24 @@ async function lerLogRemoto(scriptName, linhas = 300, target = 'files') {
     let command;
 
     if (target === 'pedidos') {
-      command = [
-        `cd ${shellEscape(workdir)}`,
-        `if [ -f runtime-${scriptName}.log ]; then tail -n ${n} runtime-${scriptName}.log;`,
-        `elif [ -f nohup.out ]; then tail -n ${n} nohup.out;`,
-        `elif screen -ls | grep -q .; then screen -ls;`,
-        `else ps aux | grep ${shellEscape(scriptName)} | grep -v grep || echo 'API de pedidos sem log localizado. Processo pode estar fora do nohup/pm2/screen.'; fi`,
-      ].join(' ');
-    } else {
+  const runtimeLog = `runtime-${scriptName}.log`;
+
+  command = `
+    cd ${shellEscape(workdir)} && 
+    if [ -f ${shellEscape(runtimeLog)} ]; then
+      tail -n ${n} ${shellEscape(runtimeLog)};
+    elif [ -f api-pedidos.log ]; then
+      tail -n ${n} api-pedidos.log;
+    elif [ -f nohup.out ]; then
+      tail -n ${n} nohup.out;
+    else
+      echo 'Nenhum arquivo de log encontrado para a API de pedidos.';
+      echo 'Arquivos esperados: ${runtimeLog}, api-pedidos.log ou nohup.out';
+      echo '--- Processo localizado ---';
+      ps aux | grep ${shellEscape(scriptName)} | grep -v grep || true;
+    fi
+  `;
+} else {
       const logFile = `runtime-${scriptName}.log`;
 
       command = `cd ${shellEscape(workdir)} && tail -n ${n} ${shellEscape(logFile)} 2>/dev/null || true`;
@@ -189,6 +213,7 @@ module.exports = {
   lerCrontab,
   salvarCrontab,
   listarPidsPorPorta,
+  listarPidsPorNome,
   matarPidsPorPorta,
   lerLogRemoto,
   isSshMode,
