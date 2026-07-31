@@ -3,6 +3,8 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
 const { spawn, execFile } = require('child_process');
 const { Storage } = require('@google-cloud/storage');
 
@@ -15,8 +17,14 @@ const statusServicosCache = {
   data: null,
   updatedAt: 0,
 };
+const logsServicosCache = {};
+const logsCronCache = {};
+let statusServicosRefreshPromise = null;
 
-const STATUS_CACHE_TTL_MS = Number(process.env.STATUS_CACHE_TTL_MS || 8000);
+const STATUS_CACHE_TTL_MS = Number(process.env.STATUS_CACHE_TTL_MS || 300000);
+const STATUS_STALE_TTL_MS = Number(process.env.STATUS_STALE_TTL_MS || 1800000);
+const LOGS_CACHE_TTL_MS = Number(process.env.LOGS_CACHE_TTL_MS || 30000);
+const CRON_LOGS_CACHE_TTL_MS = Number(process.env.CRON_LOGS_CACHE_TTL_MS || 60000);
 const SSH_STATUS_TIMEOUT_MS = Number(process.env.SSH_STATUS_TIMEOUT_MS || 6000);
 const IGNORAR_ALERTA_APOS_STOP_MS = Number(process.env.IGNORAR_ALERTA_APOS_STOP_MS || 45000);
 const ALERT_EMAIL_ON_MANUAL_STOP =
@@ -30,12 +38,16 @@ const {
   listarPidsPorNome,
   matarPidsPorPorta,
   lerLogRemoto,
+  diagnosticarLogsCrontab,
+  lerLogsCrontab,
 } = require('./remoteExecution');
 
 const { iniciarMonitoramento } = require('./serviceMonitor');
 const { enviarEmailAlerta } = require('./mailer');
 const { enviarAlertaOperacional, listarAlertas, garantirTabelaAlertas } = require('./alertService');
+const { garantirTabelaAcoesPainel, registrarAcaoPainel, listarAcoesPainel } = require('./auditService');
 const { detectarErroLog } = require('./serviceMonitor');
+const { criarCache, cacheValido, salvarCache } = require('./cacheService');
 
 const pool = require('./db');
 const { validarPedido } = require('./pedidoValidator');
@@ -59,20 +71,46 @@ const SIG_FOLDER = process.env.SIGCOTEFACIL_FOLDER || '/home/sigpedidos/sigcotef
 const RUNTIME_LOG_DIR = process.env.RUNTIME_LOG_DIR || path.join(__dirname, 'runtime-logs');
 const ALLOW_CRON_WRITE = String(process.env.ALLOW_CRON_WRITE || 'false').toLowerCase() === 'true';
 const dashboardCache = {
-  bucket: {
-    data: null,
-    updatedAt: 0,
-    ttl: 60000,
-  },
-  redeLoja: {
-    data: null,
-    updatedAt: 0,
-    ttl: 60000,
-  },
+  bucket: criarCache(60000),
+  redeLoja: criarCache(60000),
 };
+const arquivosBucketCache = criarCache(process.env.BUCKET_CACHE_TTL_MS || 30000);
 
-function cacheValido(cacheItem) {
-  return cacheItem.data && Date.now() - cacheItem.updatedAt < cacheItem.ttl;
+function normalizarDataFiltro(value) {
+  const texto = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(texto)) return null;
+  return texto;
+}
+
+function filtrosData(req, coluna, aliasesInicio = ['dataInicio', 'dataInicial', 'inicio'], aliasesFim = ['dataFim', 'dataFinal', 'fim']) {
+  const inicio = normalizarDataFiltro(aliasesInicio.map((key) => req.query[key]).find(Boolean));
+  const fim = normalizarDataFiltro(aliasesFim.map((key) => req.query[key]).find(Boolean));
+  const where = [];
+  const params = [];
+
+  if (inicio) {
+    where.push(`DATE(${coluna}) >= ?`);
+    params.push(inicio);
+  }
+
+  if (fim) {
+    where.push(`DATE(${coluna}) <= ?`);
+    params.push(fim);
+  }
+
+  return { inicio, fim, where, params };
+}
+
+function bancoConfigurado() {
+  return Boolean(process.env.DB_HOST && process.env.DB_USER && process.env.DB_DATABASE);
+}
+
+function registrarAcaoPainelSeguro(payload) {
+  if (!bancoConfigurado()) return;
+
+  registrarAcaoPainel(payload).catch((error) => {
+    console.error('Falha ao registrar acao do painel:', error.message);
+  });
 }
 
 const SERVICOS = {
@@ -161,17 +199,35 @@ async function safePidsServico(chave) {
   }
 }
 
-async function consultarStatusServicos({ force = false, detectarQueda = true } = {}) {
-  const agora = Date.now();
+function statusServicoInicial(chave) {
+  const servico = SERVICOS[chave];
 
-  if (!force && statusServicosCache.data && agora - statusServicosCache.updatedAt < STATUS_CACHE_TTL_MS) {
-    return {
-      ...statusServicosCache.data,
-      cache: true,
-      cacheAgeMs: agora - statusServicosCache.updatedAt,
-    };
-  }
+  return {
+    nome: servico.nome,
+    script: servico.script || null,
+    jar: servico.jar || null,
+    porta: servico.porta,
+    servidor: servidorServico(chave),
+    tipo: chave === 'pedidos' ? 'servico' : 'job',
+    online: false,
+    statusOperacional: 'verificando',
+    pids: [],
+    target: alvoServico(chave),
+  };
+}
 
+function statusInicialServicos() {
+  return {
+    atualizadoEm: new Date().toISOString(),
+    data: {
+      geracao: statusServicoInicial('geracao'),
+      exclusao: statusServicoInicial('exclusao'),
+      pedidos: statusServicoInicial('pedidos'),
+    },
+  };
+}
+
+async function atualizarStatusServicos({ detectarQueda = true } = {}) {
   const resultados = await Promise.allSettled([
     safePidsServico('geracao'),
     safePidsServico('exclusao'),
@@ -266,6 +322,62 @@ if (detectarQueda) {
   };
 }
 
+function atualizarStatusServicosEmBackground({ detectarQueda = true } = {}) {
+  if (statusServicosRefreshPromise) {
+    return statusServicosRefreshPromise;
+  }
+
+  statusServicosRefreshPromise = atualizarStatusServicos({ detectarQueda })
+    .catch((error) => {
+      console.error('Falha ao atualizar cache de status dos serviços:', error.message);
+      return null;
+    })
+    .finally(() => {
+      statusServicosRefreshPromise = null;
+    });
+
+  return statusServicosRefreshPromise;
+}
+
+async function consultarStatusServicos({ force = false, detectarQueda = true } = {}) {
+  const agora = Date.now();
+  const cacheAgeMs = statusServicosCache.updatedAt ? agora - statusServicosCache.updatedAt : 0;
+
+  if (!force && statusServicosCache.data && cacheAgeMs < STATUS_CACHE_TTL_MS) {
+    return {
+      ...statusServicosCache.data,
+      cache: true,
+      stale: false,
+      cacheAgeMs,
+    };
+  }
+
+  if (!force && statusServicosCache.data && cacheAgeMs < STATUS_STALE_TTL_MS) {
+    atualizarStatusServicosEmBackground({ detectarQueda });
+
+    return {
+      ...statusServicosCache.data,
+      cache: true,
+      stale: true,
+      cacheAgeMs,
+    };
+  }
+
+  if (!force && !statusServicosCache.data) {
+    atualizarStatusServicosEmBackground({ detectarQueda });
+
+    return {
+      ...statusInicialServicos(),
+      cache: true,
+      stale: true,
+      pendingRefresh: true,
+      cacheAgeMs: 0,
+    };
+  }
+
+  return atualizarStatusServicos({ detectarQueda });
+}
+
 function invalidarCacheStatusServicos() {
   statusServicosCache.data = null;
   statusServicosCache.updatedAt = 0;
@@ -337,14 +449,18 @@ function validarToken(token) {
 }
 
 function authMiddleware(req, res, next) {
-  const publicPaths = ['/health', '/auth/login'];
+  const publicPaths = ['/', '/health', '/auth/login'];
 
   if (publicPaths.includes(req.path)) {
     return next();
   }
 
   const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  const token = header.startsWith('Bearer ')
+    ? header.slice(7)
+    : req.path.endsWith('/logs/stream')
+      ? req.query.token || null
+      : null;
   const payload = validarToken(token);
 
   if (!payload) {
@@ -355,6 +471,19 @@ function authMiddleware(req, res, next) {
   return next();
 }
 
+app.get('/', (req, res) => {
+  return res.json({
+    success: true,
+    message: 'Backend SIG Integracao Pedidos online.',
+    data: {
+      api: `http://localhost:${PORT}`,
+      health: '/health',
+      login: '/auth/login',
+      painel: process.env.FRONTEND_URL || 'http://localhost:4200/login',
+    },
+  });
+});
+
 app.post('/auth/login', (req, res) => {
   const tokenInformado = String(req.body?.token || req.body?.password || '').trim();
 
@@ -364,7 +493,8 @@ app.post('/auth/login', (req, res) => {
 
   const now = Math.floor(Date.now() / 1000);
   const accessToken = criarToken({
-    sub: 'painel-sig-integracao',
+    sub: 'admin',
+    usuario: 'admin',
     iat: now,
     exp: now + TOKEN_TTL_SECONDS,
   });
@@ -541,6 +671,51 @@ function extrairDadosPedido(payload) {
   };
 }
 
+function postJson(urlDestino, payload, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(urlDestino);
+    const body = JSON.stringify(payload);
+    const client = url.protocol === 'https:' ? https : http;
+
+    const req = client.request(
+      {
+        method: 'POST',
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: `${url.pathname}${url.search}`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          ...headers,
+        },
+        timeout: Number(process.env.PROXY_PEDIDOS_TIMEOUT_MS || 30000),
+      },
+      (response) => {
+        let responseBody = '';
+
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => {
+          responseBody += chunk;
+        });
+        response.on('end', () => {
+          resolve({
+            ok: response.statusCode >= 200 && response.statusCode < 300,
+            status: response.statusCode,
+            text: responseBody,
+          });
+        });
+      }
+    );
+
+    req.on('timeout', () => {
+      req.destroy(new Error('Tempo limite excedido ao comunicar com endpoint externo.'));
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
 function formatarArquivo(file) {
   const campanha = file.name.replace(/\.json$/i, '');
 
@@ -580,6 +755,15 @@ async function listarArquivosBucket() {
         new Date(b.atualizadoEm || b.criadoEm || 0).getTime() -
         new Date(a.atualizadoEm || a.criadoEm || 0).getTime()
     );
+}
+
+async function listarArquivosBucketCached({ force = false } = {}) {
+  if (!force && cacheValido(arquivosBucketCache)) {
+    return arquivosBucketCache.data;
+  }
+
+  const arquivos = await listarArquivosBucket();
+  return salvarCache(arquivosBucketCache, arquivos);
 }
 
 /* =========================
@@ -624,13 +808,20 @@ app.get('/health', async (req, res) => {
 app.get('/servicos/status', authMiddleware, async (req, res) => {
   try {
     const payload = await consultarStatusServicos({
-      force: true,
+      force: String(req.query.force || 'false') === 'true',
       detectarQueda: false,
     });
 
     return res.json({
       success: true,
       data: payload.data,
+      meta: {
+        cache: !!payload.cache,
+        stale: !!payload.stale,
+        pendingRefresh: !!payload.pendingRefresh,
+        cacheAgeMs: payload.cacheAgeMs || 0,
+        atualizadoEm: payload.atualizadoEm,
+      },
     });
   } catch (error) {
     return erroResponse(res, 500, 'Erro ao consultar status dos serviços', error);
@@ -640,6 +831,14 @@ app.get('/servicos/status', authMiddleware, async (req, res) => {
 app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
   try {
     const result = await executarScript(process.env.SCRIPT_GERACAO || 'executa_script.sh');
+    invalidarCacheStatusServicos();
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'INICIAR_SERVICO',
+      alvo: 'geracao',
+      mensagem: 'Geração iniciada pelo painel.',
+      detalhe: result,
+    });
 
     return res.json({
       success: true,
@@ -647,6 +846,14 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
       data: result,
     });
   } catch (error) {
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'INICIAR_SERVICO',
+      alvo: 'geracao',
+      status: 'ERRO',
+      mensagem: 'Erro ao iniciar geração.',
+      detalhe: error.stack || error.message,
+    });
     
 
     return res.status(500).json({
@@ -660,6 +867,14 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
 app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
   try {
     const result = await executarScript(process.env.SCRIPT_GERACAO || 'executa_script.sh');
+    invalidarCacheStatusServicos();
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'INICIAR_SERVICO',
+      alvo: 'geracao',
+      mensagem: 'Geração iniciada pelo painel.',
+      detalhe: result,
+    });
 
     return res.json({
       success: true,
@@ -667,6 +882,14 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
       data: result,
     });
   } catch (error) {
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'INICIAR_SERVICO',
+      alvo: 'geracao',
+      status: 'ERRO',
+      mensagem: 'Erro ao iniciar geração.',
+      detalhe: error.stack || error.message,
+    });
   
 
     return res.status(500).json({
@@ -680,6 +903,14 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
 app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
   try {
     const result = await executarScript(process.env.SCRIPT_EXCLUSAO || 'executa_exclusao_script.sh');
+    invalidarCacheStatusServicos();
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'INICIAR_SERVICO',
+      alvo: 'exclusao',
+      mensagem: 'Exclusão iniciada pelo painel.',
+      detalhe: result,
+    });
 
     return res.json({
       success: true,
@@ -687,6 +918,15 @@ app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
       data: result,
     });
   } catch (error) {
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'INICIAR_SERVICO',
+      alvo: 'exclusao',
+      status: 'ERRO',
+      mensagem: 'Erro ao iniciar exclusão.',
+      detalhe: error.stack || error.message,
+    });
+
     return res.status(500).json({
       success: false,
       message: 'Erro ao iniciar exclusão',
@@ -698,6 +938,14 @@ app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
 app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
   try {
     const result = await executarScript(process.env.SCRIPT_EXCLUSAO || 'executa_exclusao_script.sh');
+    invalidarCacheStatusServicos();
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'INICIAR_SERVICO',
+      alvo: 'exclusao',
+      mensagem: 'Exclusão iniciada pelo painel.',
+      detalhe: result,
+    });
 
     return res.json({
       success: true,
@@ -705,6 +953,15 @@ app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
       data: result,
     });
   } catch (error) {
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'INICIAR_SERVICO',
+      alvo: 'exclusao',
+      status: 'ERRO',
+      mensagem: 'Erro ao iniciar exclusão.',
+      detalhe: error.stack || error.message,
+    });
+
     return res.status(500).json({
       success: false,
       message: 'Erro ao iniciar exclusão',
@@ -744,6 +1001,24 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
         pidsDepois.join(', ') || '-'
       }`
     );
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'PARAR_SERVICO',
+      alvo: chave,
+      mensagem: pidsAntes.length
+        ? pidsDepois.length
+          ? 'Parada solicitada, mas ainda existem processos ativos.'
+          : 'Serviço parado com sucesso.'
+        : 'Nenhum processo ativo encontrado para parar.',
+      detalhe: {
+        target,
+        porta: servico.porta,
+        servidor: servidorServico(chave),
+        pidsAntes,
+        pidsEncerrados,
+        pidsDepois,
+      },
+    });
 
     if (ALERT_EMAIL_ON_MANUAL_STOP && pidsAntes.length > 0) {
       enviarAlertaOperacional({
@@ -780,6 +1055,15 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'PARAR_SERVICO',
+      alvo: req.params.servico,
+      status: 'ERRO',
+      mensagem: 'Erro ao parar serviço.',
+      detalhe: error.stack || error.message,
+    });
+
     return erroResponse(res, 500, 'Erro ao parar serviço', error);
   }
 });
@@ -788,6 +1072,9 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
   try {
     const servico = req.params.servico;
     const limit = Number(req.query.limit || req.query.linhas || 300);
+    const force = String(req.query.force || 'false') === 'true';
+    const cacheKey = `${servico}:${limit}`;
+    const cache = logsServicosCache[cacheKey];
 
     let scriptName;
 
@@ -805,12 +1092,37 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
     }
 
     const target = servico === 'pedidos' ? 'pedidos' : 'files';
+    const agora = Date.now();
+
+    if (!force && cache?.content && agora - cache.updatedAt < LOGS_CACHE_TTL_MS) {
+      return res.json({
+        success: true,
+        data: cache.content.split('\n'),
+        content: cache.content,
+        meta: {
+          cache: true,
+          cacheAgeMs: agora - cache.updatedAt,
+          atualizadoEm: cache.atualizadoEm,
+        },
+      });
+    }
+
     const content = await lerLogRemoto(scriptName, limit, target);
+    logsServicosCache[cacheKey] = {
+      content,
+      updatedAt: Date.now(),
+      atualizadoEm: new Date().toISOString(),
+    };
 
     return res.json({
       success: true,
       data: content.split('\n'),
       content,
+      meta: {
+        cache: false,
+        cacheAgeMs: 0,
+        atualizadoEm: logsServicosCache[cacheKey].atualizadoEm,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -822,6 +1134,14 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
 });
 
 app.get('/servicos/:servico/logs/stream', (req, res) => {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : req.query.token;
+  const payload = validarToken(token);
+
+  if (!payload) {
+    return erroResponse(res, 401, 'Acesso nao autorizado. Faca login novamente.');
+  }
+
   const chave = req.params.servico;
 
   if (!SERVICOS[chave]) {
@@ -907,22 +1227,114 @@ app.get('/cron', authMiddleware, async (req, res) => {
   }
 });
 
+app.get('/cron/logs/diagnostico', authMiddleware, async (req, res) => {
+  try {
+    const data = await diagnosticarLogsCrontab(SERVICOS);
+
+    return res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    return erroResponse(res, 500, 'Erro ao diagnosticar logs do crontab', error);
+  }
+});
+
+app.get('/cron/logs', authMiddleware, async (req, res) => {
+  try {
+    const linhas = Number(req.query.linhas || req.query.limit || 200);
+    const force = String(req.query.force || 'false') === 'true';
+    const cacheKey = `cron:${linhas}`;
+    const cache = logsCronCache[cacheKey];
+    const agora = Date.now();
+
+    if (!force && cache?.data && agora - cache.updatedAt < CRON_LOGS_CACHE_TTL_MS) {
+      return res.json({
+        success: true,
+        data: cache.data,
+        meta: {
+          cache: true,
+          cacheAgeMs: agora - cache.updatedAt,
+          atualizadoEm: cache.atualizadoEm,
+        },
+      });
+    }
+
+    const data = await lerLogsCrontab(SERVICOS, linhas);
+    logsCronCache[cacheKey] = {
+      data,
+      updatedAt: Date.now(),
+      atualizadoEm: new Date().toISOString(),
+    };
+
+    return res.json({
+      success: true,
+      data,
+      meta: {
+        cache: false,
+        cacheAgeMs: 0,
+        atualizadoEm: logsCronCache[cacheKey].atualizadoEm,
+      },
+    });
+  } catch (error) {
+    return erroResponse(res, 500, 'Erro ao ler logs do crontab', error);
+  }
+});
+
 app.post('/cron', authMiddleware, async (req, res) => {
   try {
     const content = req.body.content ?? req.body.crontab ?? '';
 
     await salvarCrontab(content);
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'SALVAR_CRON',
+      alvo: 'crontab',
+      mensagem: 'Crontab salvo pelo painel.',
+      detalhe: {
+        linhas: String(content || '').split(/\r?\n/).length,
+      },
+    });
 
     return res.json({
       success: true,
       message: 'Crontab salvo com sucesso',
     });
   } catch (error) {
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'SALVAR_CRON',
+      alvo: 'crontab',
+      status: 'ERRO',
+      mensagem: 'Erro ao salvar crontab.',
+      detalhe: error.stack || error.message,
+    });
+
     return res.status(500).json({
       success: false,
       message: 'Erro ao salvar crontab',
       error: error.message,
     });
+  }
+});
+
+app.get('/painel/acoes', authMiddleware, async (req, res) => {
+  try {
+    const data = await listarAcoesPainel({
+      limit: req.query.limit,
+      acao: req.query.acao,
+      status: req.query.status,
+    });
+
+    return res.json({
+      success: true,
+      data,
+      meta: {
+        total: data.length,
+      },
+    });
+  } catch (error) {
+    return erroResponse(res, 500, 'Erro ao listar ações do painel', error);
   }
 });
 
@@ -982,25 +1394,16 @@ function agruparPedidosPorLoja(rows = []) {
 
 app.get('/dashboard', async (req, res) => {
   try {
-    const dataInicial = req.query.dataInicial || req.query.inicio || null;
-    const dataFinal = req.query.dataFinal || req.query.fim || null;
+    const force = String(req.query.force || 'false') === 'true';
+    const pedidoDatas = filtrosData(req, 'dataPedido');
+    const logDatas = filtrosData(req, 'criado_em');
+    const dataInicial = pedidoDatas.inicio;
+    const dataFinal = pedidoDatas.fim;
+    const params = pedidoDatas.params;
+    const where = pedidoDatas.where.length ? `WHERE ${pedidoDatas.where.join(' AND ')}` : '';
+    const whereLogs = logDatas.where.length ? `AND ${logDatas.where.join(' AND ')}` : '';
 
-    const filtros = [];
-    const params = [];
-
-    if (dataInicial) {
-      filtros.push('DATE(dataPedido) >= ?');
-      params.push(dataInicial);
-    }
-
-    if (dataFinal) {
-      filtros.push('DATE(dataPedido) <= ?');
-      params.push(dataFinal);
-    }
-
-    const where = filtros.length ? `WHERE ${filtros.join(' AND ')}` : '';
-
-    const bucketPromise = cacheValido(dashboardCache.bucket)
+    const bucketPromise = !force && cacheValido(dashboardCache.bucket)
       ? Promise.resolve(dashboardCache.bucket.data)
       : listarArquivosBucket()
           .then((arquivos) => {
@@ -1010,13 +1413,7 @@ app.get('/dashboard', async (req, res) => {
               totalArquivos: Array.isArray(arquivos) ? arquivos.length : 0,
             };
 
-            dashboardCache.bucket = {
-              ...dashboardCache.bucket,
-              data,
-              updatedAt: Date.now(),
-            };
-
-            return data;
+            return salvarCache(dashboardCache.bucket, data);
           })
           .catch((error) => ({
             bucketOnline: false,
@@ -1024,7 +1421,8 @@ app.get('/dashboard', async (req, res) => {
             totalArquivos: dashboardCache.bucket.data?.totalArquivos || 0,
           }));
 
-    const redeLojaPromise = cacheValido(dashboardCache.redeLoja)
+    const redeLojaCacheKey = `${dataInicial || ''}:${dataFinal || ''}`;
+    const redeLojaPromise = !force && cacheValido(dashboardCache.redeLoja) && dashboardCache.redeLoja.key === redeLojaCacheKey
       ? Promise.resolve(dashboardCache.redeLoja.data)
       : queryComTimeout(
           `
@@ -1094,13 +1492,7 @@ app.get('/dashboard', async (req, res) => {
               porLoja: agruparPedidosPorLoja(linhas || []),
             };
 
-            dashboardCache.redeLoja = {
-              ...dashboardCache.redeLoja,
-              data,
-              updatedAt: Date.now(),
-            };
-
-            return data;
+            return salvarCache(dashboardCache.redeLoja, data, { key: redeLojaCacheKey });
           })
           .catch(() => {
             return dashboardCache.redeLoja.data || {
@@ -1154,7 +1546,8 @@ app.get('/dashboard', async (req, res) => {
         SELECT COUNT(*) AS total
         FROM log_integracao_pedidos
         WHERE status = 'ERRO'
-      `),
+        ${whereLogs}
+      `, logDatas.params),
 
       listarAlertas({ limit: 8 }),
     ]);
@@ -1196,6 +1589,11 @@ app.get('/dashboard', async (req, res) => {
       force: false,
       detectarQueda: false,
     });
+    const servicosLista = Object.values(statusServicosPayload.data || {});
+    const totalServicos = servicosLista.length;
+    const servicosOnline = servicosLista.filter((servico) => servico?.online).length;
+    const totalPedidos = Number(primeiraLinha(totalPedidosResult).total || 0);
+    const totalErros = Number(primeiraLinha(logsErroResult).total || 0);
 
     return res.json({
       success: true,
@@ -1206,10 +1604,13 @@ app.get('/dashboard', async (req, res) => {
         bucketErro: bucketData.bucketErro,
         totalArquivos: bucketData.totalArquivos,
 
-        totalPedidos: primeiraLinha(totalPedidosResult).total || 0,
+        totalPedidos,
         pedidosHoje: primeiraLinha(pedidosHojeResult).total || 0,
         ultimaMovimentacao: primeiraLinha(ultimaMovimentacaoResult).ultimaData || null,
-        totalErros: primeiraLinha(logsErroResult).total || 0,
+        totalErros,
+        taxaErro: totalPedidos ? Number(((totalErros / totalPedidos) * 100).toFixed(2)) : 0,
+        servicosOnline,
+        totalServicos,
 
         porIntegradora: linhasQuery(porIntegradoraResult),
         porRede: redeLojaData.porRede,
@@ -1241,7 +1642,10 @@ app.get('/dashboard', async (req, res) => {
 app.get('/arquivos', async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req, 20, 200);
-    const arquivos = filtrarArquivos(await listarArquivosBucket(), req.query.search);
+    const arquivos = filtrarArquivos(
+      await listarArquivosBucketCached({ force: String(req.query.force || 'false') === 'true' }),
+      req.query.search
+    );
 
     return res.json({
       success: true,
@@ -1312,6 +1716,16 @@ app.delete('/arquivos/:nomeArquivo', async (req, res) => {
     }
 
     await file.delete();
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'EXCLUIR_ARQUIVO',
+      alvo: nomeArquivo,
+      mensagem: 'Arquivo excluído pelo painel.',
+      detalhe: {
+        bucket: BUCKET_NAME,
+        nomeArquivo,
+      },
+    });
 
     return res.json({
       success: true,
@@ -1321,6 +1735,15 @@ app.delete('/arquivos/:nomeArquivo', async (req, res) => {
       },
     });
   } catch (error) {
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'EXCLUIR_ARQUIVO',
+      alvo: req.params.nomeArquivo,
+      status: 'ERRO',
+      mensagem: 'Erro ao excluir arquivo.',
+      detalhe: error.stack || error.message,
+    });
+
     return erroResponse(res, 500, 'Erro ao excluir arquivo');
   }
 });
@@ -1334,6 +1757,7 @@ app.get('/pedidos', async (req, res) => {
     const { page, limit, offset } = parsePagination(req, 20, 200);
     const params = [];
     const where = [];
+    const datas = filtrosData(req, 'dataPedido');
 
     if (req.query.search) {
       const like = `%${req.query.search}%`;
@@ -1360,15 +1784,8 @@ app.get('/pedidos', async (req, res) => {
       params.push(req.query.integradora);
     }
 
-    if (req.query.dataInicio) {
-      where.push('DATE(dataPedido) >= ?');
-      params.push(req.query.dataInicio);
-    }
-
-    if (req.query.dataFim) {
-      where.push('DATE(dataPedido) <= ?');
-      params.push(req.query.dataFim);
-    }
+    where.push(...datas.where);
+    params.push(...datas.params);
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
@@ -1427,9 +1844,14 @@ app.get('/pedidos/:codigo', async (req, res) => {
 app.get('/logs', async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req, 30, 200);
+    const force = String(req.query.force || 'false') === 'true';
     const search = String(req.query.search || '').trim().toLowerCase();
+    const datasPedidos = filtrosData(req, 'dataPedido');
+    const datasLogs = filtrosData(req, 'criado_em');
+    const wherePedidos = datasPedidos.where.length ? `WHERE ${datasPedidos.where.join(' AND ')}` : '';
+    const whereLogs = datasLogs.where.length ? `WHERE ${datasLogs.where.join(' AND ')}` : '';
 
-    const arquivos = (await listarArquivosBucket()).slice(0, 100).map((arquivo) => ({
+    const arquivos = (await listarArquivosBucketCached({ force })).slice(0, 100).map((arquivo) => ({
       tipo: 'ARQUIVO_GERADO',
       status: 'SUCESSO',
       descricao: `Arquivo ${arquivo.nomeArquivo} disponível no bucket`,
@@ -1446,9 +1868,10 @@ app.get('/logs', async (req, res) => {
     const [pedidos] = await queryComTimeout(`
       SELECT codigo, numeroCarrinhoDeCompras, IdCampanha, NomeCampanha, pedidoIntegradora, integradora, CnpjCliente, dataPedido
       FROM pedidoconfirmaintegracao
+      ${wherePedidos}
       ORDER BY codigo DESC
       LIMIT 100
-    `);
+    `, datasPedidos.params);
 
     const logsPedidos = pedidos.map((pedido) => ({
       tipo: 'PEDIDO_INSERIDO',
@@ -1469,9 +1892,10 @@ app.get('/logs', async (req, res) => {
     const [tentativas] = await queryComTimeout(`
       SELECT id, origem, pedido_integrador, id_campanha, cnpj_cliente, status, mensagem, payload, erro, criado_em
       FROM log_integracao_pedidos
+      ${whereLogs}
       ORDER BY id DESC
       LIMIT 200
-    `);
+    `, datasLogs.params);
 
     const logsTentativas = tentativas.map((log) => ({
       tipo: 'TENTATIVA_ENVIO_PEDIDO',
@@ -1526,16 +1950,12 @@ app.post('/proxy/enviapedido', async (req, res) => {
   const dados = extrairDadosPedido(payload);
 
   try {
-    const response = await fetch(urlDestino, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const textoResposta = await response.text();
+    const response = await postJson(
+      urlDestino,
+      payload,
+      req.headers.authorization ? { Authorization: req.headers.authorization } : {}
+    );
+    const textoResposta = response.text;
 
     let respostaFormatada;
 
@@ -1657,6 +2077,13 @@ app.get('/debug/logs-integracao', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Backend rodando em http://localhost:${PORT}`);
   console.log(`SIG_FOLDER=${SIG_FOLDER}`);
-  garantirTabelaAlertas().catch((e) => console.error('Falha ao garantir tabela de alertas:', e.message));
+
+  if (bancoConfigurado()) {
+    garantirTabelaAlertas().catch((e) => console.error('Falha ao garantir tabela de alertas:', e.message));
+    garantirTabelaAcoesPainel().catch((e) => console.error('Falha ao garantir tabela de acoes do painel:', e.message));
+  } else {
+    console.warn('Tabela de alertas nao verificada: configure DB_HOST, DB_USER e DB_DATABASE para habilitar banco.');
+  }
+
   iniciarMonitoramento(SERVICOS);
 });

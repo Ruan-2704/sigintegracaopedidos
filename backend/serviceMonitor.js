@@ -4,6 +4,7 @@ const {
   listarPidsPorPorta,
   listarPidsPorNome,
   lerLogRemoto,
+  isSshMode,
 } = require('./remoteExecution');
 
 const { enviarAlertaOperacional } = require('./alertService');
@@ -290,6 +291,18 @@ function iniciarMonitoramento(SERVICOS) {
   const enabled = String(process.env.SERVICE_MONITOR_ENABLED || 'true').toLowerCase() === 'true';
 
   if (!enabled) {
+    return;
+  }
+
+  const monitorForcado = process.env.SERVICE_MONITOR_ENABLED !== undefined;
+  const semConfigOperacional =
+    !isSshMode() &&
+    process.platform === 'win32' &&
+    !process.env.SIGCOTEFACIL_FOLDER &&
+    !monitorForcado;
+
+  if (semConfigOperacional) {
+    console.warn('Monitoramento de servicos desabilitado: ambiente Windows local sem SIGCOTEFACIL_FOLDER. Configure EXECUTION_MODE=ssh ou SERVICE_MONITOR_ENABLED=true para forcar.');
     return;
   }
 

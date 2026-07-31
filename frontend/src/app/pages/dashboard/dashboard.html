@@ -7,7 +7,7 @@
   <div class="dashboard-actions">
     <input type="date" [(ngModel)]="dataInicial" />
     <input type="date" [(ngModel)]="dataFinal" />
-    <button class="btn-primary" type="button" (click)="carregar()" [disabled]="carregando">
+    <button class="btn-primary" type="button" (click)="carregar(true)" [disabled]="carregando">
       {{ carregando ? 'Atualizando...' : 'Atualizar' }}
     </button>
   </div>
@@ -20,9 +20,9 @@
   <section class="kpi-grid">
     <a class="kpi-card" routerLink="/pedidos">
       <div class="kpi-content">
-        <span>Total de pedidos</span>
+        <span>Pedidos no periodo</span>
         <strong>{{ dados.totalPedidos || 0 }}</strong>
-        <small>Pedidos gravados na integração</small>
+        <small>{{ periodoLabel }}</small>
       </div>
       <div class="kpi-icon">🧾</div>
     </a>
@@ -31,25 +31,25 @@
       <div class="kpi-content">
         <span>Arquivos no bucket</span>
         <strong>{{ dados.totalArquivos || 0 }}</strong>
-        <small>JSONs disponíveis para consumo</small>
+        <small>{{ dados.bucketOnline === false ? 'Bucket indisponivel' : 'JSONs disponiveis' }}</small>
       </div>
       <div class="kpi-icon">📁</div>
     </a>
 
     <div class="kpi-card">
       <div class="kpi-content">
-        <span>Pedidos hoje</span>
-        <strong>{{ dados.pedidosHoje || 0 }}</strong>
-        <small>Movimento do dia atual</small>
+        <span>Servicos online</span>
+        <strong>{{ dados.servicosOnline || 0 }}/{{ dados.totalServicos || 0 }}</strong>
+        <small>{{ dados.pedidosHoje || 0 }} pedidos hoje</small>
       </div>
       <div class="kpi-icon">⚡</div>
     </div>
 
     <a class="kpi-card warning" routerLink="/logs">
       <div class="kpi-content">
-        <span>Erros registrados</span>
+        <span>Erros no periodo</span>
         <strong>{{ dados.totalErros || 0 }}</strong>
-        <small>Falhas capturadas nos logs de integração</small>
+        <small>Taxa estimada: {{ dados.taxaErro || 0 }}%</small>
       </div>
       <div class="kpi-icon">⚠️</div>
     </a>
@@ -148,33 +148,33 @@
         <div class="campaign">
           <div>
             <strong>Total de pedidos</strong>
-            <span>Pedidos gravados na integração</span>
+            <span>{{ periodoLabel }}</span>
           </div>
           <b>{{ dados.totalPedidos || 0 }}</b>
         </div>
 
         <div class="campaign">
           <div>
-            <strong>Pedidos hoje</strong>
-            <span>Movimento do dia atual</span>
+            <strong>Servicos online</strong>
+            <span>Processos operacionais ativos</span>
           </div>
-          <b>{{ dados.pedidosHoje || 0 }}</b>
+          <b>{{ dados.servicosOnline || 0 }}/{{ dados.totalServicos || 0 }}</b>
         </div>
 
         <div class="campaign">
           <div>
             <strong>Arquivos no bucket</strong>
-            <span>JSONs disponíveis para consumo</span>
+            <span>{{ dados.bucketOnline === false ? 'Bucket indisponivel' : 'JSONs disponiveis' }}</span>
           </div>
           <b>{{ dados.totalArquivos || 0 }}</b>
         </div>
 
         <div class="campaign">
           <div>
-            <strong>Erros registrados</strong>
-            <span>Falhas capturadas nos logs</span>
+            <strong>Taxa de erro</strong>
+            <span>Erros sobre pedidos do periodo</span>
           </div>
-          <b>{{ dados.totalErros || 0 }}</b>
+          <b>{{ dados.taxaErro || 0 }}%</b>
         </div>
       </div>
     </div>

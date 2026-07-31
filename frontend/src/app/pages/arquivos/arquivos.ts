@@ -9,6 +9,7 @@ import { IntegracaoService } from '../../services/service';
   styleUrls: ['./arquivos.scss']
 })
 export class ArquivosComponent implements OnInit {
+  private readonly cacheKey = 'sig_integracao_arquivos_cache';
   arquivos: any[] = [];
   selecionado: any = null;
   previewArquivo: any = null;
@@ -24,17 +25,34 @@ export class ArquivosComponent implements OnInit {
 
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
 
-  ngOnInit(): void { this.carregar(); }
+  ngOnInit(): void {
+    this.restaurarCacheLocal();
+    this.carregar();
+  }
 
-  carregar(): void {
-    this.carregando = true;
+  carregar(force = false): void {
+    const temCache = !force && this.restaurarCacheLocal();
+
+    if (!force && !temCache) {
+      this.arquivos = [];
+      this.totalRegistros = 0;
+      this.totalPaginas = 1;
+    }
+
+    this.carregando = !this.arquivos.length;
     this.erro = '';
-    this.service.getArquivos({ page: this.paginaAtual, limit: this.itensPorPagina, search: this.filtro }).subscribe({
+    this.service.getArquivos({
+      page: this.paginaAtual,
+      limit: this.itensPorPagina,
+      search: this.filtro,
+      force
+    }).subscribe({
       next: (res) => {
         this.arquivos = res.data || [];
         this.totalRegistros = res.meta?.total || 0;
         this.totalPaginas = res.meta?.totalPages || 1;
         this.ultimaAtualizacao = new Date();
+        this.salvarCacheLocal();
         this.carregando = false;
         this.cdr.detectChanges();
       },
@@ -81,7 +99,7 @@ export class ArquivosComponent implements OnInit {
     if (!confirm(`Deseja realmente excluir o arquivo ${item.nomeArquivo}?`)) return;
     this.carregando = true;
     this.service.excluirArquivo(item.nomeArquivo).subscribe({
-      next: () => this.carregar(),
+      next: () => this.carregar(true),
       error: (err) => {
         console.error('Erro ao excluir arquivo:', err);
         this.erro = 'Erro ao excluir arquivo.';
@@ -94,4 +112,48 @@ export class ArquivosComponent implements OnInit {
   fechar(): void { this.selecionado = null; this.previewArquivo = null; this.cdr.detectChanges(); }
   paginaAnterior(): void { if (this.paginaAtual > 1) { this.paginaAtual--; this.carregar(); } }
   proximaPagina(): void { if (this.paginaAtual < this.totalPaginas) { this.paginaAtual++; this.carregar(); } }
+
+  private cacheId(): string {
+    return JSON.stringify({
+      page: this.paginaAtual,
+      limit: this.itensPorPagina,
+      search: this.filtro || ''
+    });
+  }
+
+  private restaurarCacheLocal(): boolean {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKey) || '{}');
+      const item = cache?.[this.cacheId()];
+
+      if (item?.data) {
+        this.arquivos = item.data || [];
+        this.totalRegistros = item.meta?.total || 0;
+        this.totalPaginas = item.meta?.totalPages || 1;
+        this.ultimaAtualizacao = item.atualizadoEm ? new Date(item.atualizadoEm) : null;
+        return true;
+      }
+    } catch {
+      localStorage.removeItem(this.cacheKey);
+    }
+
+    return false;
+  }
+
+  private salvarCacheLocal(): void {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKey) || '{}');
+      cache[this.cacheId()] = {
+        data: this.arquivos,
+        meta: {
+          total: this.totalRegistros,
+          totalPages: this.totalPaginas
+        },
+        atualizadoEm: new Date().toISOString()
+      };
+      localStorage.setItem(this.cacheKey, JSON.stringify(cache));
+    } catch {
+      localStorage.removeItem(this.cacheKey);
+    }
+  }
 }

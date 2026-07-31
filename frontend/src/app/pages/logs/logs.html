@@ -1,6 +1,6 @@
 <div class="page-title">
   <div><h2>Logs Operacionais</h2><p>Linha do tempo da integração: arquivos, pedidos e movimentações recentes.</p></div>
-  <button type="button" class="btn-primary" (click)="carregar()" [disabled]="carregando">{{ carregando ? 'Atualizando...' : 'Atualizar' }}</button>
+  <button type="button" class="btn-primary" (click)="carregar(true)" [disabled]="carregando">{{ carregando ? 'Atualizando...' : 'Atualizar' }}</button>
 </div>
 
 <section class="filters-card">

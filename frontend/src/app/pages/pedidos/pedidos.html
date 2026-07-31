@@ -3,7 +3,7 @@
     <h2>Pedidos Inseridos</h2>
     <p>Pedidos confirmados pelas integrações SmartPed / Cotefácil.</p>
   </div>
-  <button type="button" class="btn-primary" (click)="carregar()" [disabled]="carregando">{{ carregando ? 'Atualizando...' : 'Atualizar' }}</button>
+  <button type="button" class="btn-primary" (click)="carregar(true)" [disabled]="carregando">{{ carregando ? 'Atualizando...' : 'Atualizar' }}</button>
 </div>
 
 <section class="filters-card compact-grid">

@@ -6,7 +6,7 @@
   </div>
   <div class="title-actions">
     <span class="last-update" *ngIf="ultimaAtualizacao">Atualizado {{ ultimaAtualizacao | date:'HH:mm:ss' }}</span>
-    <button class="btn-primary" type="button" (click)="carregar()" [disabled]="carregando">
+    <button class="btn-primary" type="button" (click)="carregar(true, true)" [disabled]="carregando">
       {{ carregando ? 'Atualizando...' : 'Atualizar' }}
     </button>
   </div>

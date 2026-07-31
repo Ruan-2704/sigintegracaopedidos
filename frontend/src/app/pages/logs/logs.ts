@@ -9,6 +9,7 @@ import { IntegracaoService } from '../../services/service';
   styleUrls: ['./logs.scss']
 })
 export class LogsComponent implements OnInit {
+  private readonly cacheKey = 'sig_integracao_logs_cache';
   logs: any[] = [];
   carregando = false;
   erro = '';
@@ -20,19 +21,34 @@ export class LogsComponent implements OnInit {
   totalPaginas = 1;
 
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
-  ngOnInit(): void { this.carregar(); }
+  ngOnInit(): void {
+    this.restaurarCacheLocal();
+    this.carregar();
+  }
 
-  carregar(): void {
-    this.carregando = true;
+  carregar(force = false): void {
+    const temCache = !force && this.restaurarCacheLocal();
+
+    if (!force && !temCache) {
+      this.logs = [];
+      this.totalRegistros = 0;
+      this.totalPaginas = 1;
+    }
+
+    this.carregando = !this.logs.length;
     this.erro = '';
-    this.service.getLogs({ page: this.paginaAtual, limit: this.itensPorPagina }).subscribe({
+    this.service.getLogs({
+      page: this.paginaAtual,
+      limit: this.itensPorPagina,
+      search: this.filtro,
+      force
+    }).subscribe({
       next: (res) => {
-        const termo = this.filtro.trim().toLowerCase();
-        const base = res.data || [];
-        this.logs = termo ? base.filter((l) => Object.values(l).some((v) => String(v ?? '').toLowerCase().includes(termo))) : base;
+        this.logs = res.data || [];
         this.totalRegistros = res.meta?.total || this.logs.length;
         this.totalPaginas = res.meta?.totalPages || 1;
         this.ultimaAtualizacao = new Date();
+        this.salvarCacheLocal();
         this.carregando = false;
         this.cdr.detectChanges();
       },
@@ -49,4 +65,48 @@ export class LogsComponent implements OnInit {
   limparFiltro(): void { this.filtro = ''; this.paginaAtual = 1; this.carregar(); }
   paginaAnterior(): void { if (this.paginaAtual > 1) { this.paginaAtual--; this.carregar(); } }
   proximaPagina(): void { if (this.paginaAtual < this.totalPaginas) { this.paginaAtual++; this.carregar(); } }
+
+  private cacheId(): string {
+    return JSON.stringify({
+      page: this.paginaAtual,
+      limit: this.itensPorPagina,
+      search: this.filtro || ''
+    });
+  }
+
+  private restaurarCacheLocal(): boolean {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKey) || '{}');
+      const item = cache?.[this.cacheId()];
+
+      if (item?.data) {
+        this.logs = item.data || [];
+        this.totalRegistros = item.meta?.total || this.logs.length;
+        this.totalPaginas = item.meta?.totalPages || 1;
+        this.ultimaAtualizacao = item.atualizadoEm ? new Date(item.atualizadoEm) : null;
+        return true;
+      }
+    } catch {
+      localStorage.removeItem(this.cacheKey);
+    }
+
+    return false;
+  }
+
+  private salvarCacheLocal(): void {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKey) || '{}');
+      cache[this.cacheId()] = {
+        data: this.logs,
+        meta: {
+          total: this.totalRegistros,
+          totalPages: this.totalPaginas
+        },
+        atualizadoEm: new Date().toISOString()
+      };
+      localStorage.setItem(this.cacheKey, JSON.stringify(cache));
+    } catch {
+      localStorage.removeItem(this.cacheKey);
+    }
+  }
 }

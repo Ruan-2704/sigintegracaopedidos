@@ -9,6 +9,7 @@ import { ServicosComponent } from './pages/servicos/servicos';
 import { CronComponent } from './pages/cron/cron';
 import { AuthGuard } from './auth.guard';
 import { ValidadorPedidoComponent } from './pages/validador-pedido/validador-pedido';
+import { AuditoriaComponent } from './pages/auditoria/auditoria';
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
@@ -23,6 +24,7 @@ export const routes: Routes = [
       { path: 'arquivos', component: ArquivosComponent },
       { path: 'pedidos', component: PedidosComponent },
       { path: 'logs', component: LogsComponent },
+      { path: 'auditoria', component: AuditoriaComponent },
       { path: 'cron', component: CronComponent },
       { path: 'validador-pedido', component: ValidadorPedidoComponent },
     ]

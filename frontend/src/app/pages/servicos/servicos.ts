@@ -9,6 +9,8 @@ import { IntegracaoService, ServicoStatus } from '../../services/service';
   styleUrls: ['./servicos.scss']
 })
 export class ServicosComponent implements OnInit, OnDestroy {
+  private readonly cacheKeyServicos = 'sig_integracao_servicos_cache';
+  private readonly cacheKeyLogs = 'sig_integracao_servicos_logs_cache';
   servicos: ServicoStatus[] = [];
   servicoLogSelecionado = 'geracao';
   logs: string[] = [];
@@ -17,19 +19,19 @@ export class ServicosComponent implements OnInit, OnDestroy {
   erro = '';
   ultimaAtualizacao: Date | null = null;
   private timer?: number;
-  private logsTimer?: number;
+  private logsStream?: EventSource;
 
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
 
   ngOnInit(): void {
-    this.carregar();
-    this.timer = window.setInterval(() => this.carregar(false), 8000);
-    this.logsTimer = window.setInterval(() => this.carregarLogs(false), 3500);
+    this.restaurarCacheLocal();
+    this.carregar(!this.servicos.length);
+    this.timer = window.setInterval(() => this.carregar(false), 60000);
   }
 
   ngOnDestroy(): void {
     if (this.timer) window.clearInterval(this.timer);
-    if (this.logsTimer) window.clearInterval(this.logsTimer);
+    this.fecharStreamLogs();
   }
 
   private normalizarServicos(data: any): ServicoStatus[] {
@@ -72,11 +74,12 @@ export class ServicosComponent implements OnInit, OnDestroy {
   }
 
   carregar(mostrarLoading = true, force = false): void {
-    if (mostrarLoading) this.carregando = true;
+    if (mostrarLoading && !this.servicos.length) this.carregando = true;
 
     this.service.getServicosStatus(force).subscribe({
       next: (res: any) => {
         this.servicos = this.normalizarServicos(res.data);
+        this.salvarCacheLocalServicos();
 
         if (!this.servicos.find((item) => item.chave === this.servicoLogSelecionado) && this.servicos.length) {
           this.servicoLogSelecionado = this.servicos[0].chave;
@@ -85,7 +88,9 @@ export class ServicosComponent implements OnInit, OnDestroy {
         this.ultimaAtualizacao = new Date();
         this.carregando = false;
         this.erro = '';
-        this.carregarLogs(false);
+        if (!this.logsStream) {
+          this.conectarStreamLogs();
+        }
         this.cdr.detectChanges();
       },
       error: (err) => {
@@ -104,7 +109,7 @@ export class ServicosComponent implements OnInit, OnDestroy {
         this.servicoLogSelecionado = servico;
         this.carregando = false;
         this.carregar();
-        this.carregarLogs();
+        this.conectarStreamLogs();
       },
       error: (err) => {
         this.erro = err?.error?.message || 'Erro ao iniciar serviço.';
@@ -135,7 +140,8 @@ export class ServicosComponent implements OnInit, OnDestroy {
 
   selecionarLog(chave: string): void {
     this.servicoLogSelecionado = chave;
-    this.carregarLogs();
+    this.restaurarCacheLocalLogs();
+    this.conectarStreamLogs();
   }
 
   carregarLogs(mostrarErro = true): void {
@@ -146,6 +152,7 @@ export class ServicosComponent implements OnInit, OnDestroy {
       next: (res: any) => {
         const data = res.data;
         this.logs = Array.isArray(data) ? data.filter(Boolean) : String(res.content || '').split('\n').filter(Boolean);
+        this.salvarCacheLocalLogs();
         this.carregandoLogs = false;
         this.cdr.detectChanges();
       },
@@ -157,7 +164,99 @@ export class ServicosComponent implements OnInit, OnDestroy {
     });
   }
 
+  conectarStreamLogs(): void {
+    if (!this.servicoLogSelecionado) return;
+
+    this.fecharStreamLogs();
+    this.carregandoLogs = true;
+
+    try {
+      const stream = this.service.streamLogsServico(this.servicoLogSelecionado);
+      this.logsStream = stream;
+
+      stream.onmessage = (event) => {
+        const payload = JSON.parse(event.data || '{}');
+
+        if (Array.isArray(payload.linhas)) {
+          this.logs = payload.linhas.filter(Boolean);
+          this.salvarCacheLocalLogs();
+        }
+
+        if (Array.isArray(payload.novasLinhas) && payload.novasLinhas.length) {
+          this.logs = [...this.logs, ...payload.novasLinhas.filter(Boolean)].slice(-500);
+          this.salvarCacheLocalLogs();
+        }
+
+        this.carregandoLogs = false;
+        this.cdr.detectChanges();
+      };
+
+      stream.onerror = () => {
+        this.fecharStreamLogs();
+        this.carregarLogs(false);
+      };
+    } catch {
+      this.carregarLogs(false);
+    }
+  }
+
+  private fecharStreamLogs(): void {
+    if (this.logsStream) {
+      this.logsStream.close();
+      this.logsStream = undefined;
+    }
+  }
+
   trackServico(_: number, item: ServicoStatus): string {
     return item.chave;
+  }
+
+  private restaurarCacheLocal(): void {
+    try {
+      const cacheServicos = JSON.parse(localStorage.getItem(this.cacheKeyServicos) || 'null');
+
+      if (cacheServicos?.data) {
+        this.servicos = this.normalizarServicos(cacheServicos.data);
+        this.ultimaAtualizacao = cacheServicos.atualizadoEm ? new Date(cacheServicos.atualizadoEm) : null;
+      }
+
+      this.restaurarCacheLocalLogs();
+    } catch {
+      localStorage.removeItem(this.cacheKeyServicos);
+      localStorage.removeItem(this.cacheKeyLogs);
+    }
+  }
+
+  private salvarCacheLocalServicos(): void {
+    localStorage.setItem(this.cacheKeyServicos, JSON.stringify({
+      data: this.servicos,
+      atualizadoEm: new Date().toISOString()
+    }));
+  }
+
+  private salvarCacheLocalLogs(): void {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKeyLogs) || '{}');
+      cache[this.servicoLogSelecionado] = {
+        logs: this.logs.slice(-500),
+        atualizadoEm: new Date().toISOString()
+      };
+      localStorage.setItem(this.cacheKeyLogs, JSON.stringify(cache));
+    } catch {
+      localStorage.removeItem(this.cacheKeyLogs);
+    }
+  }
+
+  private restaurarCacheLocalLogs(): void {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKeyLogs) || '{}');
+      const item = cache?.[this.servicoLogSelecionado];
+
+      if (Array.isArray(item?.logs)) {
+        this.logs = item.logs;
+      }
+    } catch {
+      localStorage.removeItem(this.cacheKeyLogs);
+    }
   }
 }

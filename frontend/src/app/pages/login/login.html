@@ -33,19 +33,19 @@
 
       <div class="login-heading">
         <h2>Acesso ao painel</h2>
-        <p>Informe a URL do backend e o token configurado no ambiente.</p>
+        <p>Informe o usuário e a senha para acessar o painel.</p>
       </div>
 
-      <label>URL do backend</label>
+      <label>Usuário</label>
       <div class="input-line">
         <span>↗</span>
-        <input name="apiUrl" [(ngModel)]="apiUrl" placeholder="http://localhost:3001" />
+        <input name="usuario" [(ngModel)]="usuario" placeholder="Digite o usuário" />
       </div>
 
-      <label>Token de acesso</label>
+      <label>Senha</label>
       <div class="input-line">
         <span>●</span>
-        <input name="token" [(ngModel)]="token" type="password" placeholder="Digite o token de acesso" />
+        <input name="token" [(ngModel)]="token" type="password" placeholder="Digite a senha" />
       </div>
 
       <button type="submit" [disabled]="carregando || !token.trim()">

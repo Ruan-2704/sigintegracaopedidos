@@ -21,3 +21,63 @@
     <button class="btn-primary" type="button" (click)="salvar()" [disabled]="!escritaLiberada || carregando">Salvar crontab</button>
   </div>
 </section>
+
+<section class="cron-card logs-card">
+  <div class="logs-header">
+    <div>
+      <h3>Últimas execuções do cron</h3>
+      <p>Saída dos jobs agendados: arquivos gerados, pedidos inseridos, erros e mensagens recentes.</p>
+    </div>
+    <div class="log-actions">
+      <select [(ngModel)]="linhasLog" (change)="carregarLogsCron()">
+        <option [ngValue]="100">100 linhas</option>
+        <option [ngValue]="200">200 linhas</option>
+        <option [ngValue]="500">500 linhas</option>
+      </select>
+      <button class="btn-secondary" type="button" (click)="carregarLogsCron(true)" [disabled]="carregandoLogs">
+        {{ carregandoLogs ? 'Carregando...' : 'Atualizar logs' }}
+      </button>
+    </div>
+  </div>
+
+  <div *ngIf="carregandoLogs" class="state-card">Carregando logs do crontab...</div>
+  <div *ngIf="!carregandoLogs && logsCron.length === 0" class="state-card">Nenhum log carregado.</div>
+
+  <div class="log-diagnostics" *ngIf="!carregandoLogs && logsCron.length > 0">
+    <article *ngFor="let item of logsCron">
+      <div class="log-title">
+        <strong>{{ item.nome }}</strong>
+        <span [class.ok]="item.arquivo?.existe && !item.resumo?.erros">{{ statusResumo(item) }}</span>
+      </div>
+
+      <small>Script: {{ item.script }} • Arquivo: {{ item.arquivo?.path || '-' }} • Origem: {{ item.arquivo?.source || '-' }}</small>
+
+      <div class="log-summary">
+        <div><b>{{ item.resumo?.arquivos || 0 }}</b><small>arquivos</small></div>
+        <div><b>{{ item.resumo?.pedidos || 0 }}</b><small>pedidos</small></div>
+        <div><b>{{ item.resumo?.campanhas || 0 }}</b><small>campanhas</small></div>
+        <div><b>{{ item.resumo?.erros || 0 }}</b><small>erros</small></div>
+      </div>
+
+      <div class="events-list" *ngIf="eventosLog(item).length; else semEventos">
+        <div class="event-row" *ngFor="let evento of eventosLog(item)">
+          <span [class.error]="evento.status === 'ERRO'" [class.warn]="evento.status === 'ALERTA'">{{ evento.tipo }}</span>
+          <p>{{ evento.mensagem }}</p>
+          <small *ngIf="evento.detalhe">{{ evento.detalhe }}</small>
+        </div>
+      </div>
+
+      <ng-template #semEventos>
+        <div class="state-card small">Nenhum evento operacional reconhecido. O log completo continua disponível abaixo.</div>
+      </ng-template>
+
+      <div class="actions log-toggle">
+        <button class="btn-secondary" type="button" (click)="alternarLogCompleto(item.chave)">
+          {{ logsCompletosAbertos[item.chave] ? 'Ocultar log completo' : 'Visualizar log completo' }}
+        </button>
+      </div>
+
+      <pre class="cron-log-output" *ngIf="logsCompletosAbertos[item.chave]">{{ resumoLog(item) }}</pre>
+    </article>
+  </div>
+</section>

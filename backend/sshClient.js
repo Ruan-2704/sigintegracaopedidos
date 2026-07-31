@@ -6,7 +6,7 @@ function getSshConfig(target = 'files') {
   const config = {
     host: process.env[`${prefix}_HOST`],
     port: Number(process.env[`${prefix}_PORT`] || 22),
-    username: process.env[`${prefix}_USER`],
+    username: process.env[`${prefix}_USER`] || 'admin',
     readyTimeout: Number(process.env.SSH_READY_TIMEOUT || 20000),
   };
   const privateKeyPath = process.env[`${prefix}_PRIVATE_KEY_PATH`];

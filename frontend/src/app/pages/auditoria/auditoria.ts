@@ -1,28 +1,24 @@
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { IntegracaoService } from '../../services/service';
 
 @Component({
-  selector: 'app-dashboard',
-  templateUrl: './dashboard.html',
-  styleUrls: ['./dashboard.scss']
+  selector: 'app-auditoria',
+  templateUrl: './auditoria.html',
+  styleUrls: ['./auditoria.scss']
 })
-export class DashboardComponent implements OnInit {
-  private readonly cacheKey = 'sig_integracao_dashboard_cache';
-  dados: any = null;
+export class AuditoriaComponent implements OnInit {
+  private readonly cacheKey = 'sig_integracao_auditoria_cache';
+  acoes: any[] = [];
   carregando = false;
   erro = '';
+  filtroAcao = '';
+  filtroStatus = '';
   ultimaAtualizacao: Date | null = null;
-  dataInicial = '';
-  dataFinal = '';
-  periodoLabel = 'Geral';
+  limite = 50;
 
-  constructor(
-    private service: IntegracaoService,
-    private cdr: ChangeDetectorRef
-  ) {}
+  constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
 
   ngOnInit(): void {
     this.restaurarCacheLocal();
@@ -30,46 +26,68 @@ export class DashboardComponent implements OnInit {
   }
 
   carregar(force = false): void {
-    this.atualizarPeriodoLabel();
-
     const temCache = !force && this.restaurarCacheLocal();
 
     if (!force && !temCache) {
-      this.dados = null;
+      this.acoes = [];
     }
 
-    this.carregando = force || !this.dados;
+    this.carregando = force || !this.acoes.length;
     this.erro = '';
 
-    this.service.getDashboard({
-      dataInicio: this.dataInicial,
-      dataFim: this.dataFinal,
+    this.service.getAcoesPainel({
+      limit: this.limite,
+      acao: this.filtroAcao,
+      status: this.filtroStatus,
       force
     }).subscribe({
       next: (res) => {
-        this.dados = res;
+        this.acoes = res.data || [];
         this.ultimaAtualizacao = new Date();
         this.salvarCacheLocal();
         this.carregando = false;
         this.cdr.detectChanges();
       },
       error: (err) => {
-        console.error('Erro ao carregar dashboard:', err);
-        this.erro = 'Erro ao carregar dashboard.';
+        console.error('Erro ao carregar ações do painel:', err);
+        this.erro = 'Erro ao carregar ações do painel.';
         this.carregando = false;
         this.cdr.detectChanges();
       }
     });
   }
 
-  private atualizarPeriodoLabel(): void {
-    this.periodoLabel = this.dataInicial || this.dataFinal
-      ? `${this.dataInicial || 'inicio'} ate ${this.dataFinal || 'hoje'}`
-      : 'Geral';
+  aplicarFiltro(): void {
+    this.carregar();
+  }
+
+  limparFiltro(): void {
+    this.filtroAcao = '';
+    this.filtroStatus = '';
+    this.limite = 50;
+    this.carregar();
+  }
+
+  formatarDetalhe(detalhe: any): string {
+    if (!detalhe) return '-';
+
+    if (typeof detalhe !== 'string') {
+      return JSON.stringify(detalhe, null, 2);
+    }
+
+    try {
+      return JSON.stringify(JSON.parse(detalhe), null, 2);
+    } catch {
+      return detalhe;
+    }
   }
 
   private cacheId(): string {
-    return `${this.dataInicial || ''}:${this.dataFinal || ''}`;
+    return JSON.stringify({
+      acao: this.filtroAcao || '',
+      status: this.filtroStatus || '',
+      limit: this.limite
+    });
   }
 
   private restaurarCacheLocal(): boolean {
@@ -77,10 +95,9 @@ export class DashboardComponent implements OnInit {
       const cache = JSON.parse(localStorage.getItem(this.cacheKey) || '{}');
       const item = cache?.[this.cacheId()];
 
-      if (item?.dados) {
-        this.dados = item.dados;
+      if (item?.data) {
+        this.acoes = item.data || [];
         this.ultimaAtualizacao = item.atualizadoEm ? new Date(item.atualizadoEm) : null;
-        this.atualizarPeriodoLabel();
         return true;
       }
     } catch {
@@ -94,7 +111,7 @@ export class DashboardComponent implements OnInit {
     try {
       const cache = JSON.parse(localStorage.getItem(this.cacheKey) || '{}');
       cache[this.cacheId()] = {
-        dados: this.dados,
+        data: this.acoes,
         atualizadoEm: new Date().toISOString()
       };
       localStorage.setItem(this.cacheKey, JSON.stringify(cache));

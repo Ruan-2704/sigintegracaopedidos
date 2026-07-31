@@ -25,7 +25,12 @@ export interface ListParams {
   integradora?: string;
   dataInicio?: string;
   dataFim?: string;
+  dataInicial?: string;
+  dataFinal?: string;
   linhas?: number;
+  force?: boolean;
+  acao?: string;
+  status?: string;
 }
 
 export interface ServicoStatus {
@@ -43,7 +48,7 @@ export interface ServicoStatus {
 
 @Injectable({ providedIn: 'root' })
 export class IntegracaoService {
-  private api = localStorage.getItem('sig_integracao_api_url') || 'http://localhost:3001';
+  private api = localStorage.getItem('sig_integracao_api_url') || 'http://localhost:3300';
 
   constructor(private http: HttpClient) {}
 
@@ -52,12 +57,29 @@ export class IntegracaoService {
   }
 
   setApiUrl(url: string): void {
-    this.api = (url || 'http://localhost:3001').replace(/\/$/, '');
+    this.api = (url || 'http://localhost:3300').replace(/\/$/, '');
     localStorage.setItem('sig_integracao_api_url', this.api);
   }
 
   isLogado(): boolean {
-    return !!localStorage.getItem('sig_integracao_access_token');
+    const token = localStorage.getItem('sig_integracao_access_token');
+
+    if (!token) return false;
+
+    try {
+      const base64 = token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(atob(base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=')));
+
+      if (payload?.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+        this.sair();
+        return false;
+      }
+    } catch {
+      this.sair();
+      return false;
+    }
+
+    return true;
   }
 
   salvarToken(accessToken: string): void {
@@ -66,6 +88,13 @@ export class IntegracaoService {
 
   sair(): void {
     localStorage.removeItem('sig_integracao_access_token');
+    this.limparCacheOperacional();
+  }
+
+  limparCacheOperacional(): void {
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith('sig_integracao_') && key !== 'sig_integracao_api_url')
+      .forEach((key) => localStorage.removeItem(key));
   }
 
   login(token: string): Observable<ApiResponse<{ accessToken: string; expiresIn: number }>> {
@@ -88,8 +117,20 @@ export class IntegracaoService {
     return httpParams;
   }
 
+  private withDateAliases(params?: ListParams): ListParams | undefined {
+    if (!params) return params;
+
+    return {
+      ...params,
+      dataInicio: params.dataInicio || params.dataInicial,
+      dataFim: params.dataFim || params.dataFinal,
+      dataInicial: params.dataInicial || params.dataInicio,
+      dataFinal: params.dataFinal || params.dataFim
+    };
+  }
+
   private getRaw<T>(rota: string, params?: ListParams): Observable<T> {
-    return this.http.get<T>(`${this.api}${rota}`, { params: this.buildParams(params) }).pipe(
+    return this.http.get<T>(`${this.api}${rota}`, { params: this.buildParams(this.withDateAliases(params)) }).pipe(
       timeout(30000),
       catchError((err) => {
         console.error(`Erro na rota ${rota}:`, err);
@@ -166,8 +207,28 @@ export class IntegracaoService {
     return this.getRaw<ApiResponse<string[]>>(`/servicos/${servico}/logs`, { linhas, limit: linhas } as any);
   }
 
+  streamLogsServico(servico: string): EventSource {
+    const token = localStorage.getItem('sig_integracao_access_token') || '';
+    const params = new URLSearchParams();
+    if (token) params.set('token', token);
+
+    return new EventSource(`${this.api}/servicos/${encodeURIComponent(servico)}/logs/stream?${params.toString()}`);
+  }
+
   getCron(): Observable<ApiResponse<{ crontab: string; linhas: string[]; escritaLiberada: boolean }>> {
     return this.getRaw<ApiResponse<{ crontab: string; linhas: string[]; escritaLiberada: boolean }>>('/cron');
+  }
+
+  getDiagnosticoLogsCron(): Observable<ApiResponse<any[]>> {
+    return this.getRaw<ApiResponse<any[]>>('/cron/logs/diagnostico');
+  }
+
+  getLogsCron(linhas = 200, force = false): Observable<ApiResponse<any[]>> {
+    return this.getRaw<ApiResponse<any[]>>('/cron/logs', { linhas, limit: linhas, force } as any);
+  }
+
+  getAcoesPainel(params?: ListParams): Observable<ApiResponse<any[]>> {
+    return this.getRaw<ApiResponse<any[]>>('/painel/acoes', params);
   }
 
   salvarCron(crontab: string): Observable<ApiResponse<any>> {
