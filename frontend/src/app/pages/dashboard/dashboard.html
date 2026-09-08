@@ -1,3 +1,4 @@
+<div class="dashboard-page" [class.refreshing]="carregando && dados">
 <div class="page-title">
   <div>
     <h2>Dashboard Operacional</h2>
@@ -13,10 +14,14 @@
   </div>
 </div>
 
-<div *ngIf="carregando" class="state-card">Carregando indicadores...</div>
+<div *ngIf="carregando && !dados" class="state-card loading-card">
+  <span></span>
+  <span></span>
+  <span></span>
+</div>
 <div *ngIf="!carregando && erro" class="state-card error">{{ erro }}</div>
 
-<ng-container *ngIf="!carregando && !erro && dados">
+<ng-container *ngIf="!erro && dados">
   <section class="kpi-grid">
     <a class="kpi-card" routerLink="/pedidos">
       <div class="kpi-content">
@@ -203,3 +208,4 @@
     </div>
   </section>
 </ng-container>
+</div>

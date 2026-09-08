@@ -2,12 +2,12 @@
   <div>
     <span class="eyebrow">Painel operacional</span>
     <h2>Serviços e Execuções</h2>
-    <p>Monitore os processos da integração, execute rotinas e acompanhe os logs em tempo real.</p>
+    <p>Monitore os processos da integração, execute rotinas e acompanhe logs sob demanda.</p>
   </div>
   <div class="title-actions">
     <span class="last-update" *ngIf="ultimaAtualizacao">Atualizado {{ ultimaAtualizacao | date:'HH:mm:ss' }}</span>
     <button class="btn-primary" type="button" (click)="carregar(true, true)" [disabled]="carregando">
-      {{ carregando ? 'Atualizando...' : 'Atualizar' }}
+      {{ carregando ? 'Atualizando...' : 'Atualizar status' }}
     </button>
   </div>
 </div>
@@ -15,10 +15,10 @@
 <div *ngIf="erro" class="state-card error">{{ erro }}</div>
 
 <section class="service-grid" *ngIf="servicos.length; else semServicos">
-  <article class="service-card" *ngFor="let item of servicos; trackBy: trackServico" [class.online]="item.online">
+  <article class="service-card" *ngFor="let item of servicos; trackBy: trackServico" [class.online]="item.online" [class.selected]="item.chave === servicoLogSelecionado && terminalAberto">
     <div class="service-icon" [class.good]="item.online">
       <span *ngIf="item.chave === 'geracao'">▣</span>
-      <span *ngIf="item.chave === 'exclusao'">✕</span>
+      <span *ngIf="item.chave === 'exclusao'">×</span>
       <span *ngIf="item.chave === 'pedidos'">↗</span>
     </div>
 
@@ -30,6 +30,10 @@
       <span class="badge" [class.good]="item.online" [class.bad]="!item.online">
         <i></i>{{ item.online ? 'Online' : 'Offline' }}
       </span>
+    </div>
+
+    <div class="live-chip" *ngIf="terminalAberto && item.chave === servicoLogSelecionado">
+      {{ modoLog === 'aovivo' ? 'Log ao vivo aberto' : 'Log selecionado' }}
     </div>
 
     <div class="service-meta">
@@ -54,26 +58,120 @@
     <div class="service-actions">
       <button type="button" class="btn-primary" (click)="iniciar(item.chave)" [disabled]="carregando">Iniciar</button>
       <button type="button" class="btn-secondary" (click)="parar(item.chave)" [disabled]="carregando">Parar pelo painel</button>
-      <button type="button" class="btn-secondary" (click)="selecionarLog(item.chave)">Ver log</button>
+      <button type="button" class="btn-secondary" (click)="selecionarLog(item.chave)" [disabled]="carregandoLogs && servicoLogSelecionado === item.chave">
+        Ver log
+      </button>
     </div>
   </article>
 </section>
 
 <ng-template #semServicos>
-  <div class="state-card empty">Nenhum serviço carregado ainda. Clique em <strong>Atualizar</strong>.</div>
+  <div class="state-card empty">Nenhum serviço carregado ainda. Clique em <strong>Atualizar status</strong>.</div>
 </ng-template>
 
-<section class="panel-log">
+<section class="panel-log" [class.closed]="!terminalAberto">
   <div class="panel-header">
     <div>
       <span class="eyebrow">Monitoramento</span>
-      <h3>Log em tempo real</h3>
-      <p>Atualização automática a cada poucos segundos.</p>
+      <h3>Terminal do serviço</h3>
+      <p *ngIf="!terminalAberto">Escolha um card e clique em <strong>Ver log</strong> para carregar o terminal.</p>
+      <p *ngIf="terminalAberto">
+        {{ nomePadrao(servicoLogSelecionado) }}
+        <span *ngIf="ultimaAtualizacaoLog">• log atualizado {{ ultimaAtualizacaoLog | date:'HH:mm:ss' }}</span>
+      </p>
     </div>
-    <select [(ngModel)]="servicoLogSelecionado" (change)="carregarLogs()">
-      <option *ngFor="let item of servicos" [value]="item.chave">{{ item.nome }}</option>
-    </select>
+
+    <div class="panel-select">
+      <select [(ngModel)]="servicoLogSelecionado" (change)="selecionarLog(servicoLogSelecionado)">
+        <option *ngFor="let item of servicos" [value]="item.chave">{{ item.nome }}</option>
+      </select>
+    </div>
   </div>
 
-  <pre>{{ logs.length ? logs.join('\n') : (carregandoLogs ? 'Carregando logs...' : 'Nenhum log carregado ainda.') }}</pre>
+  <div class="log-toolbar" *ngIf="terminalAberto">
+    <div class="mode-tabs">
+      <button type="button" [class.active]="modoLog === 'ultimo'" (click)="atualizarLog()">Último log</button>
+      <button type="button" [class.active]="modoLog === 'aovivo'" (click)="ativarAoVivo()">Ao vivo</button>
+      <button type="button" [class.active]="modoLog === 'pausado'" (click)="pausarLog()" [disabled]="modoLog !== 'aovivo'">Pausar</button>
+    </div>
+
+    <div class="terminal-actions">
+      <button type="button" class="btn-secondary" (click)="atualizarLog()" [disabled]="carregandoLogs">Atualizar log</button>
+      <button type="button" class="btn-secondary" (click)="carregarDiagnosticoLogs(true)">Diagnosticar</button>
+      <button type="button" class="btn-secondary" (click)="limparTerminal()">Limpar tela</button>
+    </div>
+  </div>
+
+  <div class="log-summary" *ngIf="terminalAberto">
+    <div>
+      <small>Origem</small>
+      <strong>{{ arquivoLogPrincipal()?.source || 'Não identificada' }}</strong>
+    </div>
+    <div>
+      <small>Arquivo lido</small>
+      <strong>{{ arquivoLogPrincipal()?.path || '-' }}</strong>
+    </div>
+    <div>
+      <small>Linhas em tela</small>
+      <strong>{{ logs.length }}</strong>
+    </div>
+    <div>
+      <small>Erros destacados</small>
+      <strong>{{ resumoErros() }}</strong>
+    </div>
+  </div>
+
+  <div class="log-diagnostics" *ngIf="terminalAberto && diagnosticoLogSelecionado() as diag">
+    <span>Script/JAR: <strong>{{ diag.script }}</strong></span>
+    <span>Target: <strong>{{ diag.target }}</strong></span>
+    <span>Workdir: <strong>{{ diag.workdir || '-' }}</strong></span>
+  </div>
+
+  <div class="execution-summary" *ngIf="terminalAberto && logs.length && resumoOperacional() as resumo">
+    <div class="summary-head">
+      <span class="eyebrow">Resumo da execução</span>
+      <strong [class.has-error]="resumo.erros">{{ resumo.status }}</strong>
+    </div>
+    <div class="summary-grid">
+      <div>
+        <small>Início detectado</small>
+        <strong>{{ resumo.inicio }}</strong>
+      </div>
+      <div>
+        <small>Último marco</small>
+        <strong>{{ resumo.finalizacao }}</strong>
+      </div>
+      <div>
+        <small>OLS</small>
+        <strong>{{ resumo.quantidadeOls }}</strong>
+      </div>
+      <div>
+        <small>OLS únicas</small>
+        <strong>{{ resumo.olsUnicas }}</strong>
+      </div>
+      <div>
+        <small>Registros brutos</small>
+        <strong>{{ resumo.registrosBrutos }}</strong>
+      </div>
+      <div>
+        <small>Arquivos</small>
+        <strong>{{ resumo.arquivos }}</strong>
+      </div>
+    </div>
+    <div class="summary-last">
+      <small>Última linha útil</small>
+      <strong>{{ resumo.ultimoEvento }}</strong>
+    </div>
+  </div>
+
+  <div class="terminal" *ngIf="terminalAberto">
+    <div *ngIf="carregandoLogs && !logs.length" class="terminal-state">Carregando logs...</div>
+    <div *ngIf="!carregandoLogs && !logs.length" class="terminal-state">Nenhum log carregado ainda.</div>
+    <div
+      class="terminal-line"
+      *ngFor="let linha of logs; trackBy: trackLinha"
+      [class.error]="linhaErro(linha)"
+      [class.warn]="linhaAlerta(linha)"
+    >{{ linha }}</div>
+  </div>
 </section>

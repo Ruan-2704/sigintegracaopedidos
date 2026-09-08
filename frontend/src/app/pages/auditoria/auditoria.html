@@ -1,85 +1,113 @@
-<div class="page-title">
-  <div>
-    <h2>Ações do Painel</h2>
-    <p>Histórico das principais ações executadas no painel operacional.</p>
-  </div>
-  <button type="button" class="btn-primary" (click)="carregar(true)" [disabled]="carregando">
-    {{ carregando ? 'Atualizando...' : 'Atualizar' }}
-  </button>
-</div>
+<div class="audit-page" [class.refreshing]="carregando && acoes.length">
+  <div class="page-title">
+    <div>
+      <h2>Ações do Painel</h2>
+      <p>Histórico das principais ações executadas no painel operacional.</p>
+    </div>
 
-<section class="filters-card compact-grid">
-  <div class="field">
-    <label>Ação</label>
-    <select [(ngModel)]="filtroAcao">
-      <option value="">Todas</option>
-      <option value="INICIAR_SERVICO">Iniciar serviço</option>
-      <option value="PARAR_SERVICO">Parar serviço</option>
-      <option value="SALVAR_CRON">Salvar crontab</option>
-      <option value="EXCLUIR_ARQUIVO">Excluir arquivo</option>
-    </select>
+    <div class="title-actions">
+      <span *ngIf="ultimaAtualizacao">Atualizado {{ ultimaAtualizacao | date:'HH:mm:ss' }}</span>
+      <button type="button" class="btn-primary" (click)="carregar(true)" [disabled]="carregando">
+        {{ carregando ? 'Atualizando...' : 'Atualizar' }}
+      </button>
+    </div>
   </div>
 
-  <div class="field">
-    <label>Status</label>
-    <select [(ngModel)]="filtroStatus">
-      <option value="">Todos</option>
-      <option value="SUCESSO">Sucesso</option>
-      <option value="ERRO">Erro</option>
-    </select>
-  </div>
+  <section class="filters-card">
+    <div class="filters-head">
+      <div>
+        <span class="eyebrow">Filtros</span>
+        <strong>{{ filtrosAtivos() }} ativo{{ filtrosAtivos() === 1 ? '' : 's' }}</strong>
+      </div>
+      <button class="btn-secondary small" type="button" (click)="limparFiltro()" [disabled]="carregando">Limpar</button>
+    </div>
 
-  <div class="field small-field">
-    <label>Limite</label>
-    <select [(ngModel)]="limite">
-      <option [ngValue]="25">25</option>
-      <option [ngValue]="50">50</option>
-      <option [ngValue]="100">100</option>
-      <option [ngValue]="200">200</option>
-    </select>
-  </div>
+    <div class="filters-grid">
+      <div class="field">
+        <label>Ação</label>
+        <select [(ngModel)]="filtroAcao">
+          <option value="">Todas</option>
+          <option value="INICIAR_SERVICO">Iniciar serviço</option>
+          <option value="PARAR_SERVICO">Parar serviço</option>
+          <option value="SALVAR_CRON">Salvar crontab</option>
+          <option value="EXCLUIR_ARQUIVO">Excluir arquivo</option>
+        </select>
+      </div>
 
-  <div class="filter-actions">
-    <button class="btn-primary" type="button" (click)="aplicarFiltro()">Filtrar</button>
-    <button class="btn-secondary" type="button" (click)="limparFiltro()">Limpar</button>
-  </div>
-</section>
+      <div class="field">
+        <label>Status</label>
+        <select [(ngModel)]="filtroStatus">
+          <option value="">Todos</option>
+          <option value="SUCESSO">Sucesso</option>
+          <option value="ERRO">Erro</option>
+        </select>
+      </div>
 
-<div class="summary-line">
-  <span><strong>{{ acoes.length }}</strong> ações exibidas</span>
-  <span *ngIf="ultimaAtualizacao">Atualizado em {{ ultimaAtualizacao | date:'dd/MM/yyyy HH:mm:ss' }}</span>
-</div>
+      <div class="field small-field">
+        <label>Limite</label>
+        <select [(ngModel)]="limite">
+          <option [ngValue]="25">25</option>
+          <option [ngValue]="50">50</option>
+          <option [ngValue]="100">100</option>
+          <option [ngValue]="200">200</option>
+        </select>
+      </div>
 
-<div *ngIf="carregando" class="state-card">Carregando ações do painel...</div>
-<div *ngIf="!carregando && erro" class="state-card error">{{ erro }}</div>
-<div *ngIf="!carregando && !erro && acoes.length === 0" class="state-card">Nenhuma ação encontrada.</div>
+      <div class="filter-actions">
+        <button class="btn-primary" type="button" (click)="aplicarFiltro()" [disabled]="carregando">Filtrar</button>
+      </div>
+    </div>
+  </section>
 
-<div class="table-card" *ngIf="!carregando && !erro && acoes.length > 0">
-  <table>
-    <thead>
-      <tr>
-        <th>Data</th>
-        <th>Usuário</th>
-        <th>Ação</th>
-        <th>Alvo</th>
-        <th>Status</th>
-        <th>Mensagem</th>
-        <th>IP</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr *ngFor="let item of acoes">
-        <td>{{ item.criado_em | date:'dd/MM/yyyy HH:mm:ss' }}</td>
-        <td>{{ item.usuario || '-' }}</td>
-        <td><span class="badge neutral">{{ item.acao }}</span></td>
-        <td>{{ item.alvo || '-' }}</td>
-        <td><span class="badge" [class.good]="item.status === 'SUCESSO'" [class.bad]="item.status === 'ERRO'">{{ item.status }}</span></td>
-        <td>
-          <strong>{{ item.mensagem || '-' }}</strong>
-          <small>{{ formatarDetalhe(item.detalhe) }}</small>
-        </td>
-        <td>{{ item.ip || '-' }}</td>
-      </tr>
-    </tbody>
-  </table>
+  <section class="audit-list">
+    <div class="list-head">
+      <div>
+        <span class="eyebrow">Listagem</span>
+        <strong><b>{{ acoes.length }}</b> ações exibidas</strong>
+      </div>
+      <span class="loading-pill" *ngIf="carregando && acoes.length">Atualizando dados...</span>
+    </div>
+
+    <div *ngIf="carregando && !acoes.length" class="state-card loading-card">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+    <div *ngIf="!carregando && erro" class="state-card error">{{ erro }}</div>
+    <div *ngIf="!carregando && !erro && acoes.length === 0" class="state-card">Nenhuma ação encontrada.</div>
+
+    <div class="table-card" *ngIf="!erro && acoes.length > 0">
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Usuário</th>
+            <th>Ação</th>
+            <th>Alvo</th>
+            <th>Status</th>
+            <th>Mensagem</th>
+            <th>IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of acoes; trackBy: trackAcao">
+            <td class="date-col">{{ item.criado_em | date:'dd/MM/yyyy HH:mm:ss' }}</td>
+            <td>{{ item.usuario || '-' }}</td>
+            <td><span class="badge neutral">{{ item.acao }}</span></td>
+            <td>{{ item.alvo || '-' }}</td>
+            <td>
+              <span class="badge" [class.good]="item.status === 'SUCESSO'" [class.bad]="item.status === 'ERRO'">
+                {{ item.status }}
+              </span>
+            </td>
+            <td class="message-col">
+              <strong>{{ item.mensagem || '-' }}</strong>
+              <small *ngIf="item.detalheFormatado && item.detalheFormatado !== '-'">{{ item.detalheFormatado }}</small>
+            </td>
+            <td>{{ item.ip || '-' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </div>

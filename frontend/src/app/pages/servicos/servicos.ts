@@ -1,7 +1,14 @@
 import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { IntegracaoService, ServicoStatus } from '../../services/service';
+
+type LogMode = 'ultimo' | 'aovivo' | 'pausado';
+
+interface LogCacheItem {
+  logs: string[];
+  atualizadoEm: string;
+  meta?: any;
+  diagnostico?: any;
+}
 
 @Component({
   selector: 'app-servicos',
@@ -11,13 +18,20 @@ import { IntegracaoService, ServicoStatus } from '../../services/service';
 export class ServicosComponent implements OnInit, OnDestroy {
   private readonly cacheKeyServicos = 'sig_integracao_servicos_cache';
   private readonly cacheKeyLogs = 'sig_integracao_servicos_logs_cache';
+  private readonly logCacheTtlMs = 60000;
   servicos: ServicoStatus[] = [];
   servicoLogSelecionado = 'geracao';
   logs: string[] = [];
+  logMeta: any = null;
+  diagnosticoLogs: any[] = [];
   carregando = false;
   carregandoLogs = false;
   erro = '';
+  modoLog: LogMode = 'ultimo';
+  terminalAberto = false;
   ultimaAtualizacao: Date | null = null;
+  ultimaAtualizacaoLog: Date | null = null;
+  executionIds: Record<string, string> = {};
   private timer?: number;
   private logsStream?: EventSource;
 
@@ -26,6 +40,7 @@ export class ServicosComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.restaurarCacheLocal();
     this.carregar(!this.servicos.length);
+    this.carregarDiagnosticoLogs(false);
     this.timer = window.setInterval(() => this.carregar(false), 60000);
   }
 
@@ -66,7 +81,7 @@ export class ServicosComponent implements OnInit, OnDestroy {
     };
   }
 
-  private nomePadrao(chave: string): string {
+  nomePadrao(chave: string): string {
     if (chave === 'geracao') return 'Geração de arquivos';
     if (chave === 'exclusao') return 'Exclusão de arquivos';
     if (chave === 'pedidos') return 'API inserção de pedidos';
@@ -88,9 +103,6 @@ export class ServicosComponent implements OnInit, OnDestroy {
         this.ultimaAtualizacao = new Date();
         this.carregando = false;
         this.erro = '';
-        if (!this.logsStream) {
-          this.conectarStreamLogs();
-        }
         this.cdr.detectChanges();
       },
       error: (err) => {
@@ -105,11 +117,15 @@ export class ServicosComponent implements OnInit, OnDestroy {
     if (!confirm(`Confirmar início do serviço: ${this.nomePadrao(servico)}?`)) return;
     this.carregando = true;
     this.service.iniciarServico(servico).subscribe({
-      next: () => {
+      next: (res: any) => {
         this.servicoLogSelecionado = servico;
+        this.executionIds[servico] = res?.data?.executionId || '';
+        this.terminalAberto = true;
+        this.limparTerminal(false);
         this.carregando = false;
-        this.carregar();
-        this.conectarStreamLogs();
+        this.carregar(true, true);
+        this.carregarDiagnosticoLogs(false);
+        this.ativarAoVivo(true);
       },
       error: (err) => {
         this.erro = err?.error?.message || 'Erro ao iniciar serviço.';
@@ -140,18 +156,33 @@ export class ServicosComponent implements OnInit, OnDestroy {
 
   selecionarLog(chave: string): void {
     this.servicoLogSelecionado = chave;
-    this.restaurarCacheLocalLogs();
-    this.conectarStreamLogs();
+    this.terminalAberto = true;
+    this.modoLog = 'ultimo';
+    this.fecharStreamLogs();
+
+    const temCacheValido = this.restaurarCacheLocalLogs(true);
+    this.carregarLogs(!temCacheValido, !temCacheValido);
   }
 
-  carregarLogs(mostrarErro = true): void {
+  carregarLogs(mostrarErro = true, force = false): void {
     if (!this.servicoLogSelecionado) return;
+
+    if (!force && this.restaurarCacheLocalLogs(true)) {
+      this.carregandoLogs = false;
+      return;
+    }
+
     this.carregandoLogs = true;
 
-    this.service.getLogsServico(this.servicoLogSelecionado, 300).subscribe({
+    this.service.getLogsServico(this.servicoLogSelecionado, 300, force, this.executionIdAtual()).subscribe({
       next: (res: any) => {
         const data = res.data;
         this.logs = Array.isArray(data) ? data.filter(Boolean) : String(res.content || '').split('\n').filter(Boolean);
+        this.logMeta = res.meta || null;
+        if (this.logMeta?.executionId) {
+          this.executionIds[this.servicoLogSelecionado] = this.logMeta.executionId;
+        }
+        this.ultimaAtualizacaoLog = new Date();
         this.salvarCacheLocalLogs();
         this.carregandoLogs = false;
         this.cdr.detectChanges();
@@ -164,14 +195,150 @@ export class ServicosComponent implements OnInit, OnDestroy {
     });
   }
 
-  conectarStreamLogs(): void {
+  atualizarLog(): void {
+    this.terminalAberto = true;
+    this.fecharStreamLogs();
+    this.modoLog = 'ultimo';
+    this.carregarLogs(true, true);
+  }
+
+  ativarAoVivo(ignorarCache = false): void {
+    if (!this.servicoLogSelecionado) return;
+
+    this.terminalAberto = true;
+    this.modoLog = 'aovivo';
+    if (!ignorarCache) {
+      this.restaurarCacheLocalLogs(false);
+    }
+    this.conectarStreamLogs();
+  }
+
+  pausarLog(): void {
+    this.fecharStreamLogs();
+    this.modoLog = 'pausado';
+    this.carregandoLogs = false;
+  }
+
+  limparTerminal(salvar = true): void {
+    this.logs = [];
+    this.logMeta = null;
+    this.ultimaAtualizacaoLog = null;
+    if (salvar) {
+      this.salvarCacheLocalLogs();
+    }
+  }
+
+  carregarDiagnosticoLogs(mostrarErro = true): void {
+    this.service.getDiagnosticoLogsCron().subscribe({
+      next: (res: any) => {
+        this.diagnosticoLogs = res.data || [];
+        this.salvarCacheLocalLogs();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        if (mostrarErro) this.erro = err?.error?.message || 'Erro ao diagnosticar logs do crontab.';
+      }
+    });
+  }
+
+  diagnosticoLogSelecionado(): any {
+    return this.diagnosticoLogs.find((item) => item.chave === this.servicoLogSelecionado) || null;
+  }
+
+  executionIdAtual(): string | null {
+    return this.executionIds[this.servicoLogSelecionado] || this.logMeta?.executionId || null;
+  }
+
+  arquivoLogPrincipal(): any {
+    const diagnostico = this.diagnosticoLogSelecionado();
+    if (!diagnostico?.arquivos?.length) return null;
+    return diagnostico.arquivos.find((arquivo: any) => arquivo.existe && arquivo.source === 'crontab')
+      || diagnostico.arquivos.find((arquivo: any) => arquivo.existe)
+      || diagnostico.arquivos[0];
+  }
+
+  resumoOperacional(): any {
+    const linhas = this.logs.filter(Boolean);
+    const inicio = linhas.find((linha) => /(SIG_PANEL_START|iniciando|inicio|início|starting|INICIO PROCESSAMENTO)/i.test(linha || ''));
+    const finalizacao = [...linhas].reverse().find((linha) => /(finalizado|finalizada|concluido|concluído|started .* in|FIM PROCESSAMENTO)/i.test(linha || ''));
+    const fila = linhas.find((linha) => /Nenhuma OL na fila/i.test(linha || ''));
+    const quantidadeOls = this.extrairValorResumo(/Quantidade de OLS:\s*(\d+)/i);
+    const olsUnicas = this.extrairValorResumo(/OLS unicas.*?:\s*(\d+)/i);
+    const registrosBrutos = this.extrairValorResumo(/total registros brutos:\s*(\d+)/i);
+    const arquivos = linhas.filter((linha) => /\.json\b/i.test(linha || '') && /(arquivo|gerad|bucket|disponivel|disponível)/i.test(linha || '')).length;
+    const erros = this.resumoErros();
+    const ultimoEvento = [...linhas].reverse().find((linha) => !this.linhaRuidoResumo(linha));
+
+    return {
+      inicio: this.formatarInicioResumo(inicio),
+      finalizacao: finalizacao || fila || '-',
+      quantidadeOls: quantidadeOls ?? '-',
+      olsUnicas: olsUnicas ?? '-',
+      registrosBrutos: registrosBrutos ?? '-',
+      arquivos,
+      erros,
+      status: erros ? 'Verificar erros' : (fila ? 'Sem OL na fila' : 'Operacional'),
+      ultimoEvento: ultimoEvento || '-',
+    };
+  }
+
+  private extrairValorResumo(regex: RegExp): string | null {
+    for (const linha of this.logs) {
+      const match = String(linha || '').match(regex);
+      if (match?.[1]) return match[1];
+    }
+
+    return null;
+  }
+
+  private formatarInicioResumo(linha?: string): string {
+    if (!linha) return '-';
+
+    const data = String(linha).match(/data=([^\s]+)/)?.[1];
+    const executionId = String(linha).match(/executionId=([^\s]+)/)?.[1];
+
+    if (!data) return linha;
+
+    const quando = new Date(data);
+    const hora = Number.isNaN(quando.getTime())
+      ? data
+      : `${quando.toLocaleDateString('pt-BR')} ${quando.toLocaleTimeString('pt-BR')}`;
+
+    return executionId ? `${hora} (${executionId})` : hora;
+  }
+
+  private linhaRuidoResumo(linha: string): boolean {
+    return /^\s*$/.test(linha || '') || /^[-=_]+$/.test(linha || '');
+  }
+
+  resumoErros(): number {
+    return this.logs.filter((linha) => this.linhaErro(linha)).length;
+  }
+
+  linhaErro(linha: string): boolean {
+    return /(exception|erro|error|falha|failed|timeout|timed out|refused|unauthorized|nullpointer|sqlexception)/i.test(linha || '');
+  }
+
+  linhaAlerta(linha: string): boolean {
+    return !this.linhaErro(linha) && /(warn|warning|alerta|atenção|atencao)/i.test(linha || '');
+  }
+
+  trackServico(_: number, item: ServicoStatus): string {
+    return item.chave;
+  }
+
+  trackLinha(index: number): number {
+    return index;
+  }
+
+  private conectarStreamLogs(): void {
     if (!this.servicoLogSelecionado) return;
 
     this.fecharStreamLogs();
-    this.carregandoLogs = true;
+    this.carregandoLogs = !this.logs.length;
 
     try {
-      const stream = this.service.streamLogsServico(this.servicoLogSelecionado);
+      const stream = this.service.streamLogsServico(this.servicoLogSelecionado, this.executionIdAtual());
       this.logsStream = stream;
 
       stream.onmessage = (event) => {
@@ -179,20 +346,30 @@ export class ServicosComponent implements OnInit, OnDestroy {
 
         if (Array.isArray(payload.linhas)) {
           this.logs = payload.linhas.filter(Boolean);
-          this.salvarCacheLocalLogs();
         }
 
         if (Array.isArray(payload.novasLinhas) && payload.novasLinhas.length) {
           this.logs = [...this.logs, ...payload.novasLinhas.filter(Boolean)].slice(-500);
-          this.salvarCacheLocalLogs();
         }
 
+        if (payload.meta) {
+          this.logMeta = payload.meta;
+          if (payload.meta.executionId) {
+            this.executionIds[this.servicoLogSelecionado] = payload.meta.executionId;
+          }
+        }
+
+        this.ultimaAtualizacaoLog = new Date();
+        this.salvarCacheLocalLogs();
         this.carregandoLogs = false;
         this.cdr.detectChanges();
       };
 
       stream.onerror = () => {
         this.fecharStreamLogs();
+        if (this.modoLog === 'aovivo') {
+          this.modoLog = 'pausado';
+        }
         this.carregarLogs(false);
       };
     } catch {
@@ -207,10 +384,6 @@ export class ServicosComponent implements OnInit, OnDestroy {
     }
   }
 
-  trackServico(_: number, item: ServicoStatus): string {
-    return item.chave;
-  }
-
   private restaurarCacheLocal(): void {
     try {
       const cacheServicos = JSON.parse(localStorage.getItem(this.cacheKeyServicos) || 'null');
@@ -220,7 +393,7 @@ export class ServicosComponent implements OnInit, OnDestroy {
         this.ultimaAtualizacao = cacheServicos.atualizadoEm ? new Date(cacheServicos.atualizadoEm) : null;
       }
 
-      this.restaurarCacheLocalLogs();
+      this.restaurarCacheLocalLogs(false);
     } catch {
       localStorage.removeItem(this.cacheKeyServicos);
       localStorage.removeItem(this.cacheKeyLogs);
@@ -239,24 +412,52 @@ export class ServicosComponent implements OnInit, OnDestroy {
       const cache = JSON.parse(localStorage.getItem(this.cacheKeyLogs) || '{}');
       cache[this.servicoLogSelecionado] = {
         logs: this.logs.slice(-500),
+        meta: this.logMeta,
+        diagnostico: this.diagnosticoLogSelecionado(),
         atualizadoEm: new Date().toISOString()
       };
+      cache.__diagnostico = this.diagnosticoLogs;
+      cache.__executionIds = this.executionIds;
       localStorage.setItem(this.cacheKeyLogs, JSON.stringify(cache));
     } catch {
       localStorage.removeItem(this.cacheKeyLogs);
     }
   }
 
-  private restaurarCacheLocalLogs(): void {
+  private restaurarCacheLocalLogs(exigirValidade: boolean): boolean {
     try {
       const cache = JSON.parse(localStorage.getItem(this.cacheKeyLogs) || '{}');
-      const item = cache?.[this.servicoLogSelecionado];
+      const item: LogCacheItem = cache?.[this.servicoLogSelecionado];
 
-      if (Array.isArray(item?.logs)) {
-        this.logs = item.logs;
+      if (Array.isArray(cache?.__diagnostico)) {
+        this.diagnosticoLogs = cache.__diagnostico;
       }
+
+      if (cache?.__executionIds && typeof cache.__executionIds === 'object') {
+        this.executionIds = cache.__executionIds;
+      }
+
+      if (!Array.isArray(item?.logs)) {
+        return false;
+      }
+
+      const atualizadoEm = item.atualizadoEm ? new Date(item.atualizadoEm) : null;
+      const cacheValido = Boolean(atualizadoEm && Date.now() - atualizadoEm.getTime() < this.logCacheTtlMs);
+
+      if (exigirValidade && !cacheValido) {
+        this.logs = item.logs;
+        this.logMeta = item.meta || null;
+        this.ultimaAtualizacaoLog = atualizadoEm;
+        return false;
+      }
+
+      this.logs = item.logs;
+      this.logMeta = item.meta || null;
+      this.ultimaAtualizacaoLog = atualizadoEm;
+      return cacheValido || !exigirValidade;
     } catch {
       localStorage.removeItem(this.cacheKeyLogs);
+      return false;
     }
   }
 }
