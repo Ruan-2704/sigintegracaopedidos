@@ -2,6 +2,9 @@ const path = require('path');
 const { spawn, exec } = require('child_process');
 const { runSshCommand } = require('./sshClient');
 
+const DEFAULT_PEDIDOS_JAR = 'envia-cotacao-0.0.4.jar';
+const DEFAULT_PEDIDOS_LOG = 'logs/integracao-pedidos.log';
+
 function isSshMode() {
   return String(process.env.EXECUTION_MODE || 'local').toLowerCase() === 'ssh';
 }
@@ -68,7 +71,7 @@ function encontrarLogNoCrontab(crontab = '', scriptName = '') {
 function logEnvName(scriptName, target = 'files') {
   if (scriptName === (process.env.SCRIPT_GERACAO || 'executa_script.sh')) return 'LOG_GERACAO_FILE';
   if (scriptName === (process.env.SCRIPT_EXCLUSAO || 'executa_exclusao_script.sh')) return 'LOG_EXCLUSAO_FILE';
-  if (target === 'pedidos' || scriptName === (process.env.JAR_PEDIDOS || 'envia-cotacao-0.0.3.jar')) return 'LOG_PEDIDOS_FILE';
+  if (target === 'pedidos' || scriptName === (process.env.JAR_PEDIDOS || DEFAULT_PEDIDOS_JAR)) return 'LOG_PEDIDOS_FILE';
   return null;
 }
 
@@ -251,6 +254,21 @@ function classificarLinhaLog(linha = '', chave = '') {
       tipo: 'PEDIDO',
       status: 'SUCESSO',
       mensagem: pedido ? `Pedido processado: ${pedido}` : 'Pedido processado com sucesso.',
+      detalhe: mensagem,
+      data: extrairDataLog(linha),
+      linhaOriginal: linha,
+    };
+  }
+
+  if (chave === 'pedidos' && /(x-rastreio|rastreio|payloadRecebido|payloadSigrede|pedido|cotacao|cotação|bucket|campanha)/i.test(mensagem)) {
+    const status = /(n[ãa]o inserid|inexistente|n[ãa]o encontrad|sem json|erro|error|falha)/i.test(mensagem)
+      ? 'ALERTA'
+      : 'INFO';
+
+    return {
+      tipo: 'PEDIDO',
+      status,
+      mensagem,
       detalhe: mensagem,
       data: extrairDataLog(linha),
       linhaOriginal: linha,
@@ -626,6 +644,96 @@ async function lerLogRemoto(scriptName, linhas = 300, target = 'files', options 
   return filtrarLinhasLogOperacional(content).slice(-n).join('\n');
 }
 
+function linhaErroLogPedidos(linha = '') {
+  return /(ERROR|WARN|erro|falha|exception|unauthorized|forbidden|token|login|X-Rastreio|rastreio|payloadRecebido|payloadSigrede|pedido.*n[ãa]o inserid|n[ãa]o encontrad|inexistente|sem json|timeout|refused)/i
+    .test(String(linha || ''));
+}
+
+async function lerLogErrosPedidos(options = {}) {
+  const workdir = workdirFor('pedidos');
+  const linhas = Math.min(Math.max(Number(options.linhas || 300), 50), 1000);
+  const linhasBusca = Math.min(Math.max(Number(options.linhasBusca || linhas * 5), linhas), 5000);
+  const logPath = normalizarLogPath(
+    process.env.LOG_PEDIDOS_ERROS_FILE || process.env.PEDIDOS_API_LOG_FILE || DEFAULT_PEDIDOS_LOG,
+    workdir
+  );
+  const search = String(options.search || '').trim().toLowerCase();
+  const rastreio = String(options.rastreio || '').trim().toLowerCase();
+  const somenteErros = String(options.somenteErros ?? 'true').toLowerCase() !== 'false';
+
+  const filtrar = (content = '') => {
+    let linhasLog = filtrarLinhasLogOperacional(content);
+
+    if (somenteErros) {
+      linhasLog = linhasLog.filter(linhaErroLogPedidos);
+    }
+
+    if (rastreio) {
+      linhasLog = linhasLog.filter((linha) => String(linha || '').toLowerCase().includes(rastreio));
+    }
+
+    if (search) {
+      linhasLog = linhasLog.filter((linha) => String(linha || '').toLowerCase().includes(search));
+    }
+
+    return linhasLog.slice(-linhas);
+  };
+
+  if (isSshMode()) {
+    const command = `
+      cd ${shellEscape(workdir)} &&
+      if [ -f ${shellEscape(logPath)} ]; then
+        echo '__SIG_PEDIDOS_LOG_FOUND__|${logPath}';
+        tail -n ${linhasBusca} ${shellEscape(logPath)};
+      else
+        echo '__SIG_PEDIDOS_LOG_NOT_FOUND__|${logPath}';
+      fi
+    `;
+    const result = await runSshCommand(command, 'pedidos');
+    const linhasSaida = String(result.stdout || result.stderr || '').split(/\r?\n/);
+    const header = linhasSaida[0] || '';
+    const encontrado = header.startsWith('__SIG_PEDIDOS_LOG_FOUND__|');
+    const content = encontrado ? linhasSaida.slice(1).join('\n') : '';
+    const linhasFiltradas = filtrar(content);
+
+    return {
+      arquivo: {
+        path: logPath,
+        source: 'LOG_PEDIDOS_ERROS_FILE',
+        existe: encontrado,
+      },
+      linhas: linhasFiltradas,
+      content: linhasFiltradas.join('\n'),
+      meta: {
+        linhas: linhasFiltradas.length,
+        linhasBusca,
+        somenteErros,
+        search: search || null,
+        rastreio: rastreio || null,
+      },
+    };
+  }
+
+  if (isWindowsLocalMode() || !workdir) {
+    return {
+      arquivo: { path: logPath, source: 'LOG_PEDIDOS_ERROS_FILE', existe: false },
+      linhas: [],
+      content: '',
+      meta: { linhas: 0, linhasBusca, somenteErros, search: search || null, rastreio: rastreio || null },
+    };
+  }
+
+  const stdout = await executarComando(`tail -n ${linhasBusca} ${shellEscape(logPath)} 2>/dev/null || true`);
+  const linhasFiltradas = filtrar(stdout || '');
+
+  return {
+    arquivo: { path: logPath, source: 'LOG_PEDIDOS_ERROS_FILE', existe: Boolean(stdout) },
+    linhas: linhasFiltradas,
+    content: linhasFiltradas.join('\n'),
+    meta: { linhas: linhasFiltradas.length, linhasBusca, somenteErros, search: search || null, rastreio: rastreio || null },
+  };
+}
+
 async function listarCandidatosLog(scriptName, target = 'files') {
   const workdir = workdirFor(target);
   const candidatos = [];
@@ -823,6 +931,7 @@ module.exports = {
   listarPidsPorNome,
   matarPidsPorPorta,
   lerLogRemoto,
+  lerLogErrosPedidos,
   diagnosticarLogsCrontab,
   lerLogsCrontab,
   isSshMode,
