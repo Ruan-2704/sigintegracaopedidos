@@ -8,10 +8,19 @@ import { IntegracaoService } from '../../services/service';
 })
 export class LogsComponent implements OnInit {
   private readonly cacheKey = 'sig_integracao_logs_cache';
+  private readonly cacheKeyPedidosApi = 'sig_integracao_pedidos_api_erros_cache';
   logs: any[] = [];
+  logsPedidosApi: string[] = [];
+  metaLogsPedidosApi: any = null;
+  arquivoLogsPedidosApi: any = null;
   carregando = false;
+  carregandoPedidosApi = false;
   erro = '';
+  erroPedidosApi = '';
   filtro = '';
+  filtroPedidosApi = '';
+  rastreioPedidosApi = '';
+  somenteErrosPedidosApi = true;
   servico = '';
   status = '';
   tipo = '';
@@ -27,6 +36,7 @@ export class LogsComponent implements OnInit {
 
   ngOnInit(): void {
     this.restaurarCacheLocal();
+    this.restaurarCachePedidosApi();
     this.carregar();
   }
 
@@ -84,6 +94,45 @@ export class LogsComponent implements OnInit {
     this.dataFim = '';
     this.paginaAtual = 1;
     this.carregar();
+  }
+
+  carregarLogErrosPedidos(force = false): void {
+    const temCache = !force && this.restaurarCachePedidosApi();
+
+    if (!force && temCache) return;
+
+    this.carregandoPedidosApi = !this.logsPedidosApi.length;
+    this.erroPedidosApi = '';
+
+    this.service.getLogErrosPedidos({
+      linhas: 300,
+      search: this.filtroPedidosApi,
+      rastreio: this.rastreioPedidosApi,
+      somenteErros: this.somenteErrosPedidosApi,
+      force
+    }).subscribe({
+      next: (res: any) => {
+        this.logsPedidosApi = res.data || [];
+        this.metaLogsPedidosApi = res.meta || null;
+        this.arquivoLogsPedidosApi = res.arquivo || null;
+        this.salvarCachePedidosApi();
+        this.carregandoPedidosApi = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Erro ao carregar log da API de pedidos:', err);
+        this.erroPedidosApi = 'Erro ao carregar log da API de pedidos.';
+        this.carregandoPedidosApi = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  limparLogErrosPedidos(): void {
+    this.filtroPedidosApi = '';
+    this.rastreioPedidosApi = '';
+    this.somenteErrosPedidosApi = true;
+    this.carregarLogErrosPedidos(true);
   }
 
   paginaAnterior(): void {
@@ -151,6 +200,14 @@ export class LogsComponent implements OnInit {
     }
   }
 
+  linhaPedidoApiErro(linha: string): boolean {
+    return /(ERROR|erro|falha|exception|unauthorized|token|login|payloadRecebido|n[ãa]o inserid|inexistente|timeout|refused)/i.test(linha || '');
+  }
+
+  linhaPedidoApiAlerta(linha: string): boolean {
+    return !this.linhaPedidoApiErro(linha) && /(WARN|alerta|payloadSigrede|rastreio|motivo|bucket|campanha)/i.test(linha || '');
+  }
+
   private cacheId(): string {
     return JSON.stringify({
       page: this.paginaAtual,
@@ -197,6 +254,47 @@ export class LogsComponent implements OnInit {
       localStorage.setItem(this.cacheKey, JSON.stringify(cache));
     } catch {
       localStorage.removeItem(this.cacheKey);
+    }
+  }
+
+  private cacheIdPedidosApi(): string {
+    return JSON.stringify({
+      search: this.filtroPedidosApi || '',
+      rastreio: this.rastreioPedidosApi || '',
+      somenteErros: this.somenteErrosPedidosApi
+    });
+  }
+
+  private restaurarCachePedidosApi(): boolean {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKeyPedidosApi) || '{}');
+      const item = cache?.[this.cacheIdPedidosApi()];
+
+      if (item?.data) {
+        this.logsPedidosApi = item.data || [];
+        this.metaLogsPedidosApi = item.meta || null;
+        this.arquivoLogsPedidosApi = item.arquivo || null;
+        return true;
+      }
+    } catch {
+      localStorage.removeItem(this.cacheKeyPedidosApi);
+    }
+
+    return false;
+  }
+
+  private salvarCachePedidosApi(): void {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKeyPedidosApi) || '{}');
+      cache[this.cacheIdPedidosApi()] = {
+        data: this.logsPedidosApi,
+        meta: this.metaLogsPedidosApi,
+        arquivo: this.arquivoLogsPedidosApi,
+        atualizadoEm: new Date().toISOString()
+      };
+      localStorage.setItem(this.cacheKeyPedidosApi, JSON.stringify(cache));
+    } catch {
+      localStorage.removeItem(this.cacheKeyPedidosApi);
     }
   }
 }

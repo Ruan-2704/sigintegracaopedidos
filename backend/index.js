@@ -20,6 +20,7 @@ const statusServicosCache = {
 };
 const logsServicosCache = {};
 const logsCronCache = {};
+const pedidosApiLogsCache = {};
 let statusServicosRefreshPromise = null;
 
 const STATUS_CACHE_TTL_MS = Number(process.env.STATUS_CACHE_TTL_MS || 300000);
@@ -40,6 +41,7 @@ const {
   listarPidsPorNome,
   matarPidsPorPorta,
   lerLogRemoto,
+  lerLogErrosPedidos,
   diagnosticarLogsCrontab,
   lerLogsCrontab,
 } = require('./remoteExecution');
@@ -77,6 +79,8 @@ const TOKEN_TTL_SECONDS = Number(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 12);
 const SIG_FOLDER = process.env.SIGCOTEFACIL_FOLDER || '/home/sigpedidos/sigcotefacil';
 const RUNTIME_LOG_DIR = process.env.RUNTIME_LOG_DIR || path.join(__dirname, 'runtime-logs');
 const ALLOW_CRON_WRITE = String(process.env.ALLOW_CRON_WRITE || 'false').toLowerCase() === 'true';
+const DEFAULT_PEDIDOS_JAR = 'envia-cotacao-0.0.4.jar';
+const DEFAULT_PEDIDOS_LOG = 'logs/integracao-pedidos.log';
 const dashboardCache = {
   bucket: criarCache(60000),
   redeLoja: criarCache(60000),
@@ -200,7 +204,8 @@ const SERVICOS = {
   pedidos: {
     chave: 'pedidos',
     nome: 'API inserção de pedidos',
-    jar: process.env.JAR_PEDIDOS || 'envia-cotacao-0.0.3.jar',
+    jar: process.env.JAR_PEDIDOS || DEFAULT_PEDIDOS_JAR,
+    errorLogFile: process.env.LOG_PEDIDOS_ERROS_FILE || DEFAULT_PEDIDOS_LOG,
     porta: Number(process.env.PEDIDOS_PORT || 8080),
     healthUrl:
       process.env.PEDIDOS_HEALTH_URL ||
@@ -380,6 +385,7 @@ async function atualizarStatusServicos({ detectarQueda = true } = {}) {
   pedidos: {
   nome: SERVICOS.pedidos.nome,
   jar: SERVICOS.pedidos.jar,
+  errorLogFile: SERVICOS.pedidos.errorLogFile,
   porta: SERVICOS.pedidos.porta,
   servidor: servidorServico('pedidos'),
   tipo: 'servico',
@@ -498,6 +504,10 @@ function invalidarCacheLogsServico(chave) {
   Object.keys(logsServicosCache)
     .filter((key) => key.startsWith(`${chave}:`))
     .forEach((key) => delete logsServicosCache[key]);
+
+  if (chave === 'pedidos') {
+    Object.keys(pedidosApiLogsCache).forEach((key) => delete pedidosApiLogsCache[key]);
+  }
 }
 
 const processos = new Map();
@@ -1106,7 +1116,7 @@ app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
 app.post('/servicos/pedidos/start', authMiddleware, async (req, res) => {
   try {
     const contextoExecucao = criarContextoExecucaoPainel(req, 'pedidos');
-    const result = await executarJar(process.env.JAR_PEDIDOS || 'envia-cotacao-0.0.3.jar', 'pedidos', contextoExecucao);
+    const result = await executarJar(SERVICOS.pedidos.jar, 'pedidos', contextoExecucao);
     registrarExecucaoPainel('pedidos', contextoExecucao, result);
     invalidarCacheStatusServicos();
     registrarAcaoPainelSeguro({
@@ -1145,7 +1155,7 @@ app.post('/servicos/pedidos/start', authMiddleware, async (req, res) => {
 app.post('/servicos/pedidos/iniciar', authMiddleware, async (req, res) => {
   try {
     const contextoExecucao = criarContextoExecucaoPainel(req, 'pedidos');
-    const result = await executarJar(process.env.JAR_PEDIDOS || 'envia-cotacao-0.0.3.jar', 'pedidos', contextoExecucao);
+    const result = await executarJar(SERVICOS.pedidos.jar, 'pedidos', contextoExecucao);
     registrarExecucaoPainel('pedidos', contextoExecucao, result);
     invalidarCacheStatusServicos();
     registrarAcaoPainelSeguro({
@@ -1322,7 +1332,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
     } else if (servico === 'exclusao') {
       scriptName = process.env.SCRIPT_EXCLUSAO || 'executa_exclusao_script.sh';
     } else if (servico === 'pedidos') {
-      scriptName = process.env.JAR_PEDIDOS || 'envia-cotacao-0.0.3.jar';
+      scriptName = SERVICOS.pedidos.jar;
     } else {
       return res.status(400).json({
         success: false,
@@ -1426,6 +1436,77 @@ app.get('/servicos/logs/eventos', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     return erroResponse(res, 500, 'Erro ao buscar eventos dos serviços', error);
+  }
+});
+
+app.get('/pedidos/log-erros', authMiddleware, async (req, res) => {
+  try {
+    const linhas = Math.min(Math.max(Number(req.query.linhas || req.query.limit || 300), 50), 1000);
+    const force = String(req.query.force || 'false') === 'true';
+    const somenteErros = String(req.query.somenteErros ?? 'true').toLowerCase() !== 'false';
+    const search = String(req.query.search || '').trim();
+    const rastreio = String(req.query.rastreio || '').trim();
+    const cacheKey = JSON.stringify({ linhas, somenteErros, search, rastreio });
+    const cache = pedidosApiLogsCache[cacheKey];
+    const agora = Date.now();
+
+    if (!force && cache?.data && agora - cache.updatedAt < LOGS_CACHE_TTL_MS) {
+      return res.json({
+        success: true,
+        data: cache.data.linhas,
+        content: cache.data.content,
+        arquivo: cache.data.arquivo,
+        meta: {
+          ...cache.data.meta,
+          cache: true,
+          atualizadoEm: cache.atualizadoEm,
+          cacheAgeMs: agora - cache.updatedAt,
+        },
+      });
+    }
+
+    const payload = await lerLogErrosPedidos({
+      linhas,
+      somenteErros,
+      search,
+      rastreio,
+    });
+
+    pedidosApiLogsCache[cacheKey] = {
+      data: payload,
+      updatedAt: agora,
+      atualizadoEm: new Date().toISOString(),
+    };
+
+    registrarServicoLogSeguro(eventoServicoPayload('pedidos', {
+      req,
+      tipo: 'CONSULTA_LOG_API_PEDIDOS',
+      status: payload.arquivo?.existe ? 'INFO' : 'ALERTA',
+      mensagem: payload.arquivo?.existe
+        ? `Log de erros da API de pedidos consultado (${payload.linhas.length} linhas).`
+        : 'Log de erros da API de pedidos nao encontrado.',
+      detalhe: {
+        arquivo: payload.arquivo,
+        linhas: payload.linhas.length,
+        somenteErros,
+        search: search || null,
+        rastreio: rastreio || null,
+      },
+    }));
+
+    return res.json({
+      success: true,
+      data: payload.linhas,
+      content: payload.content,
+      arquivo: payload.arquivo,
+      meta: {
+        ...payload.meta,
+        cache: false,
+        atualizadoEm: pedidosApiLogsCache[cacheKey].atualizadoEm,
+      },
+    });
+  } catch (error) {
+    return erroResponse(res, 500, 'Erro ao ler log de erros da API de pedidos', error);
   }
 });
 

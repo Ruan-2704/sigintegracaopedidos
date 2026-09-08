@@ -67,6 +67,58 @@
   </div>
 </section>
 
+<section class="api-log-card">
+  <div class="api-log-head">
+    <div>
+      <span class="eyebrow">API de pedidos</span>
+      <h3>Erros e rastreios da integracao</h3>
+      <p>Consulta separada do arquivo gerado pela API de pedidos, sem mexer no terminal ao vivo dos servicos.</p>
+    </div>
+    <button type="button" class="btn-primary" (click)="carregarLogErrosPedidos(true)" [disabled]="carregandoPedidosApi">
+      {{ carregandoPedidosApi ? 'Consultando...' : 'Consultar log' }}
+    </button>
+  </div>
+
+  <div class="api-log-filters">
+    <div class="field">
+      <label>Busca</label>
+      <input type="text" placeholder="Mensagem, payload, campanha ou pedido" [(ngModel)]="filtroPedidosApi" (keyup.enter)="carregarLogErrosPedidos(true)" />
+    </div>
+    <div class="field">
+      <label>Rastreio</label>
+      <input type="text" placeholder="X-Rastreio" [(ngModel)]="rastreioPedidosApi" (keyup.enter)="carregarLogErrosPedidos(true)" />
+    </div>
+    <label class="check-field">
+      <input type="checkbox" [(ngModel)]="somenteErrosPedidosApi" />
+      <span>Somente erros</span>
+    </label>
+    <div class="filter-actions">
+      <button type="button" class="btn-secondary" (click)="limparLogErrosPedidos()">Limpar</button>
+    </div>
+  </div>
+
+  <div class="api-log-meta">
+    <span>Arquivo: <strong>{{ arquivoLogsPedidosApi?.path || 'logs/integracao-pedidos.log' }}</strong></span>
+    <span *ngIf="metaLogsPedidosApi">Linhas: <strong>{{ metaLogsPedidosApi.linhas || logsPedidosApi.length }}</strong></span>
+    <span *ngIf="metaLogsPedidosApi?.atualizadoEm">Atualizado em {{ metaLogsPedidosApi.atualizadoEm | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+  </div>
+
+  <div *ngIf="carregandoPedidosApi" class="state-card compact">Carregando log da API...</div>
+  <div *ngIf="!carregandoPedidosApi && erroPedidosApi" class="state-card compact error">{{ erroPedidosApi }}</div>
+  <div *ngIf="!carregandoPedidosApi && !erroPedidosApi && logsPedidosApi.length === 0" class="state-card compact">
+    Nenhum erro da API carregado.
+  </div>
+
+  <div class="api-log-terminal" *ngIf="!carregandoPedidosApi && !erroPedidosApi && logsPedidosApi.length > 0">
+    <div
+      class="api-log-line"
+      *ngFor="let linha of logsPedidosApi"
+      [class.error]="linhaPedidoApiErro(linha)"
+      [class.warn]="linhaPedidoApiAlerta(linha)"
+    >{{ linha }}</div>
+  </div>
+</section>
+
 <div class="summary-line">
   <span><strong>{{ totalRegistros }}</strong> eventos monitorados</span>
   <span *ngIf="ultimaAtualizacao">Atualizado em {{ ultimaAtualizacao | date:'dd/MM/yyyy HH:mm:ss' }}</span>

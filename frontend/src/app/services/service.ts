@@ -222,6 +222,10 @@ export class IntegracaoService {
     return this.getRaw<ApiResponse<any[]>>('/logs', params);
   }
 
+  getLogErrosPedidos(params?: ListParams & { linhas?: number; rastreio?: string; somenteErros?: boolean; force?: boolean }): Observable<ApiResponse<string[]>> {
+    return this.getRaw<ApiResponse<string[]>>('/pedidos/log-erros', params as any);
+  }
+
   getEventosServicos(params?: ListParams): Observable<ApiResponse<any[]>> {
     return this.getRaw<ApiResponse<any[]>>('/servicos/logs/eventos', params);
   }
