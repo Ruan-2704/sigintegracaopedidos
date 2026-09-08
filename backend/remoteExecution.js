@@ -88,6 +88,112 @@ function limparLinhaLog(linha = '') {
     .trim();
 }
 
+function linhaRuidoLog(linha = '') {
+  const texto = String(linha || '').trim();
+
+  if (!texto) return true;
+  if (/^=== LOG:/i.test(texto)) return true;
+  if (/^\[NOVO-LAYOUT\]\[WARN\] Produto duplicado com dados comerciais diferentes/i.test(texto)) return true;
+  if (/^Note: further occurrences of HTTP request parsing errors/i.test(texto)) return true;
+  if (/Invalid character found in method name/i.test(texto)) return true;
+  if (/HTTP method names must be tokens/i.test(texto)) return true;
+  if (/Path contains "\.\.\/" after call to StringUtils#cleanPath/i.test(texto)) return true;
+  if (/^\s*at org\.apache\.coyote\./i.test(texto)) return true;
+  if (/^\s*at org\.apache\.tomcat\./i.test(texto)) return true;
+  if (/^\s*at org\.springframework\.web\.servlet\./i.test(texto)) return true;
+  if (/^\s*at java\.base\/java\.lang\.Thread\.run/i.test(texto)) return true;
+
+  return false;
+}
+
+function filtrarLinhasLogOperacional(content = '') {
+  const vistosDuplicados = new Set();
+
+  return String(content || '')
+    .split(/\r?\n/)
+    .map((linha) => linha.trimEnd())
+    .filter((linha) => {
+      if (linhaRuidoLog(linha)) return false;
+
+      const chaveDuplicado = linha
+        .replace(/\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?/g, '')
+        .trim();
+
+      if (vistosDuplicados.has(chaveDuplicado)) return false;
+      vistosDuplicados.add(chaveDuplicado);
+      return true;
+    });
+}
+
+function ordenarCandidatosLogLeitura(candidatos = []) {
+  const prioridade = {
+    crontab: 0,
+    LOG_GERACAO_FILE: 1,
+    LOG_EXCLUSAO_FILE: 1,
+    LOG_PEDIDOS_FILE: 1,
+    runtime: 2,
+    fallback: 3,
+  };
+
+  return [...candidatos].sort((a, b) => {
+    const pa = prioridade[a.source] ?? 4;
+    const pb = prioridade[b.source] ?? 4;
+    return pa - pb;
+  });
+}
+
+function montarMarcadorPainel(options = {}) {
+  if (!options.executionId) return null;
+
+  return [
+    '===== SIG_PANEL_START',
+    `executionId=${options.executionId}`,
+    `servico=${options.servico || '-'}`,
+    `nome=${String(options.nomeServico || options.servico || '-').replace(/\s+/g, '_')}`,
+    `usuario=${options.usuario || 'admin'}`,
+    `data=${options.iniciadoEm || new Date().toISOString()}`,
+    '=====',
+  ].join(' ');
+}
+
+function recortarDesdeMarcador(content = '', options = {}) {
+  const texto = String(content || '');
+  const marcador = options.marker || montarMarcadorPainel(options);
+  const executionId = options.executionId;
+
+  if (!marcador && !executionId) return texto;
+
+  let index = marcador ? texto.lastIndexOf(marcador) : -1;
+
+  if (index < 0 && executionId) {
+    index = texto.lastIndexOf(`executionId=${executionId}`);
+    if (index > 0) {
+      const inicioLinha = texto.lastIndexOf('\n', index);
+      index = inicioLinha >= 0 ? inicioLinha + 1 : index;
+    }
+  }
+
+  return index >= 0 ? texto.slice(index) : texto;
+}
+
+async function resolverLogExecucao(scriptName, target = 'files') {
+  const workdir = workdirFor(target);
+
+  if (!isSshMode()) {
+    return {
+      source: 'runtime',
+      path: normalizarLogPath(`runtime-${scriptName}.log`, workdir),
+    };
+  }
+
+  const candidatos = await listarCandidatosLog(scriptName, target);
+
+  return ordenarCandidatosLogLeitura(candidatos)[0] || {
+    source: 'runtime',
+    path: normalizarLogPath(`runtime-${scriptName}.log`, workdir),
+  };
+}
+
 function extrairDataLog(linha = '') {
   const texto = String(linha || '');
   const match = texto.match(/\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?/);
@@ -241,15 +347,18 @@ function requireLocalWorkdir() {
   return folder;
 }
 
-async function executarScript(scriptName) {
+async function executarScript(scriptName, options = {}) {
   if (isSshMode()) {
     const workdir = workdirFor('files');
+    const arquivoLog = await resolverLogExecucao(scriptName, 'files');
+    const marcador = montarMarcadorPainel(options);
 
     const command = [
       `cd ${shellEscape(workdir)}`,
       `chmod +x ${shellEscape(scriptName)}`,
-      `nohup ./${scriptName} > runtime-${scriptName}.log 2>&1 & echo $!`,
-    ].join(' && ');
+      marcador ? `printf '%s\\n' ${shellEscape(marcador)} >> ${shellEscape(arquivoLog.path)}` : null,
+      `nohup ./${scriptName} >> ${shellEscape(arquivoLog.path)} 2>&1 & echo $!`,
+    ].filter(Boolean).join(' && ');
 
     const result = await runSshCommand(command, 'files');
 
@@ -263,6 +372,11 @@ async function executarScript(scriptName) {
       pid: String(result.stdout || '').trim(),
       stdout: result.stdout,
       stderr: result.stderr,
+      executionId: options.executionId || null,
+      marker: marcador,
+      logPath: arquivoLog.path,
+      logSource: arquivoLog.source,
+      iniciadoEm: options.iniciadoEm || null,
     };
   }
 
@@ -278,6 +392,56 @@ async function executarScript(scriptName) {
   return {
     mode: 'local',
     pid: child.pid,
+    executionId: options.executionId || null,
+    marker: montarMarcadorPainel(options),
+    iniciadoEm: options.iniciadoEm || null,
+  };
+}
+
+async function executarJar(jarName, target = 'pedidos', options = {}) {
+  if (isSshMode()) {
+    const workdir = workdirFor(target);
+    const arquivoLog = await resolverLogExecucao(jarName, target);
+    const marcador = montarMarcadorPainel(options);
+
+    const command = [
+      `cd ${shellEscape(workdir)}`,
+      marcador ? `printf '%s\\n' ${shellEscape(marcador)} >> ${shellEscape(arquivoLog.path)}` : null,
+      `nohup java -jar ${shellEscape(jarName)} >> ${shellEscape(arquivoLog.path)} 2>&1 & echo $!`,
+    ].filter(Boolean).join(' && ');
+
+    const result = await runSshCommand(command, target);
+
+    if (result.code !== 0) {
+      throw new Error(result.stderr || 'Erro ao executar JAR via SSH');
+    }
+
+    return {
+      mode: 'ssh',
+      servidor: target === 'pedidos' ? process.env.SSH_PEDIDOS_HOST : process.env.SSH_FILES_HOST,
+      pid: String(result.stdout || '').trim(),
+      stdout: result.stdout,
+      stderr: result.stderr,
+      executionId: options.executionId || null,
+      marker: marcador,
+      logPath: arquivoLog.path,
+      logSource: arquivoLog.source,
+      iniciadoEm: options.iniciadoEm || null,
+    };
+  }
+
+  const folder = requireLocalWorkdir();
+  const child = spawn('java', ['-jar', path.join(folder, jarName)], {
+    cwd: folder,
+    detached: false,
+  });
+
+  return {
+    mode: 'local',
+    pid: child.pid,
+    executionId: options.executionId || null,
+    marker: montarMarcadorPainel(options),
+    iniciadoEm: options.iniciadoEm || null,
   };
 }
 
@@ -410,17 +574,20 @@ async function matarPidsPorPorta(port, target = 'files') {
   return pids;
 }
 
-async function lerLogRemoto(scriptName, linhas = 300, target = 'files') {
+async function lerLogRemoto(scriptName, linhas = 300, target = 'files', options = {}) {
   const workdir = workdirFor(target);
   const n = Math.max(Number(linhas) || 300, 50);
+  const linhasBusca = options.executionId || options.marker
+    ? Math.max(n, Number(options.linhasBusca || 4000))
+    : n;
 
   if (isSshMode()) {
     const candidatos = await listarCandidatosLog(scriptName, target);
-    const testes = candidatos
+    const candidatosOrdenados = ordenarCandidatosLogLeitura(candidatos);
+    const testes = candidatosOrdenados
       .map((item) => `
         if [ -f ${shellEscape(item.path)} ]; then
-          echo '=== LOG: ${item.path} (${item.source}) ===';
-          tail -n ${n} ${shellEscape(item.path)};
+          tail -n ${linhasBusca} ${shellEscape(item.path)};
           exit 0;
         fi
       `)
@@ -430,7 +597,7 @@ async function lerLogRemoto(scriptName, linhas = 300, target = 'files') {
       ${testes}
       echo 'Nenhum arquivo de log encontrado para ${scriptName}.';
       echo 'Candidatos verificados:';
-      ${candidatos.map((item) => `echo '- ${item.path} (${item.source})';`).join('\n')}
+      ${candidatosOrdenados.map((item) => `echo '- ${item.path} (${item.source})';`).join('\n')}
       echo '--- Linha no crontab ---';
       crontab -l 2>/dev/null | grep ${shellEscape(scriptName)} || true;
       echo '--- Processo localizado ---';
@@ -439,7 +606,8 @@ async function lerLogRemoto(scriptName, linhas = 300, target = 'files') {
 
     const result = await runSshCommand(command, target);
 
-    return result.stdout || result.stderr || '';
+    const content = recortarDesdeMarcador(result.stdout || result.stderr || '', options);
+    return filtrarLinhasLogOperacional(content).slice(-n).join('\n');
   }
 
   if (isWindowsLocalMode()) {
@@ -451,10 +619,11 @@ async function lerLogRemoto(scriptName, linhas = 300, target = 'files') {
   }
 
   const stdout = await executarComando(
-    `tail -n ${n} ${path.join(workdir, `runtime-${scriptName}.log`)} 2>/dev/null || true`
+    `tail -n ${linhasBusca} ${path.join(workdir, `runtime-${scriptName}.log`)} 2>/dev/null || true`
   );
 
-  return stdout || '';
+  const content = recortarDesdeMarcador(stdout || '', options);
+  return filtrarLinhasLogOperacional(content).slice(-n).join('\n');
 }
 
 async function listarCandidatosLog(scriptName, target = 'files') {
@@ -576,6 +745,7 @@ async function lerLogsCrontab(servicos = {}, linhas = 200) {
 
     const target = chave === 'pedidos' ? 'pedidos' : 'files';
     const candidatos = await listarCandidatosLog(scriptName, target);
+    const candidatosOrdenados = ordenarCandidatosLogLeitura(candidatos);
 
     if (!isSshMode()) {
       itens.push({
@@ -584,7 +754,7 @@ async function lerLogsCrontab(servicos = {}, linhas = 200) {
         script: scriptName,
         target,
         workdir: workdirFor(target),
-        arquivo: candidatos[0] || null,
+        arquivo: candidatosOrdenados[0] || null,
         linhas: [],
         content: '',
         resumo: analisarLogCron(chave, []),
@@ -592,7 +762,7 @@ async function lerLogsCrontab(servicos = {}, linhas = 200) {
       continue;
     }
 
-    const testes = candidatos
+    const testes = candidatosOrdenados
       .map((item) => `
         if [ -f ${shellEscape(item.path)} ]; then
           echo '__SIG_LOG_FOUND__|${item.path}|${item.source}';
@@ -605,7 +775,7 @@ async function lerLogsCrontab(servicos = {}, linhas = 200) {
       cd ${shellEscape(workdirFor(target))} &&
       ${testes}
       echo '__SIG_LOG_NOT_FOUND__';
-      ${candidatos.map((item) => `echo '${item.path}|${item.source}';`).join('\n')}
+      ${candidatosOrdenados.map((item) => `echo '${item.path}|${item.source}';`).join('\n')}
     `;
     const result = await runSshCommand(command, target);
     const linhasSaida = String(result.stdout || result.stderr || '').split(/\r?\n/);
@@ -624,8 +794,8 @@ async function lerLogsCrontab(servicos = {}, linhas = 200) {
           existe: false,
         };
     const linhasLog = found
-      ? linhasSaida.slice(1).filter(Boolean)
-      : linhasSaida.filter(Boolean);
+      ? filtrarLinhasLogOperacional(linhasSaida.slice(1).join('\n'))
+      : filtrarLinhasLogOperacional(linhasSaida.join('\n'));
 
     itens.push({
       chave,
@@ -645,6 +815,7 @@ async function lerLogsCrontab(servicos = {}, linhas = 200) {
 
 module.exports = {
   executarScript,
+  executarJar,
   executarComando,
   lerCrontab,
   salvarCrontab,

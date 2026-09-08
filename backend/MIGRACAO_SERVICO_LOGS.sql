@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS servico_logs (
+  id INT NOT NULL AUTO_INCREMENT,
+  servico VARCHAR(40) NOT NULL,
+  nome_servico VARCHAR(120) DEFAULT NULL,
+  tipo VARCHAR(80) NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'INFO',
+  mensagem TEXT,
+  detalhe MEDIUMTEXT,
+  origem VARCHAR(80) DEFAULT NULL,
+  pid VARCHAR(160) DEFAULT NULL,
+  arquivo_log VARCHAR(500) DEFAULT NULL,
+  usuario VARCHAR(80) DEFAULT NULL,
+  ip VARCHAR(80) DEFAULT NULL,
+  criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_servico_logs_criado_em (criado_em),
+  KEY idx_servico_logs_servico_criado (servico, criado_em),
+  KEY idx_servico_logs_status_criado (status, criado_em),
+  KEY idx_servico_logs_tipo_criado (tipo, criado_em)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -33,7 +33,7 @@
 .logout:hover { background: #f0f5ff; }
 .content { min-width: 0; transition: padding-left .22s ease; }
 .content.menu-open { padding-left: 318px; }
-.page-wrapper { padding: 24px 28px 44px; }
+.page-wrapper { padding: 18px 22px 32px; }
 @media (max-width: 980px) { .topbar { padding: 0 12px; } .brand-text small { display: none; } .brand-text strong { font-size: 13px; } .content.menu-open { padding-left: 0; } .sidebar { width: min(318px,88vw); } .refresh { display: none; } .page-wrapper { padding: 20px 14px 32px; } }
 .brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .brand-mark { overflow: hidden; border: 0; background: transparent; box-shadow: 0 8px 18px rgba(0,0,0,.18); }

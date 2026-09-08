@@ -31,6 +31,8 @@ export interface ListParams {
   force?: boolean;
   acao?: string;
   status?: string;
+  servico?: string;
+  tipo?: string;
 }
 
 export interface ServicoStatus {
@@ -48,16 +50,45 @@ export interface ServicoStatus {
 
 @Injectable({ providedIn: 'root' })
 export class IntegracaoService {
-  private api = localStorage.getItem('sig_integracao_api_url') || 'http://localhost:3300';
+  private readonly defaultApi = this.getDefaultApiUrl();
+  private api = this.getInitialApiUrl();
 
   constructor(private http: HttpClient) {}
+
+  private getDefaultApiUrl(): string {
+    const host = window.location.hostname;
+
+    if (host === 'sigcotacao.sigrede.com.br') {
+      return 'https://api.sigcotacao.sigrede.com.br';
+    }
+
+    return 'http://localhost:3300';
+  }
+
+  private getInitialApiUrl(): string {
+    const savedApi = localStorage.getItem('sig_integracao_api_url');
+
+    if (!savedApi) {
+      return this.defaultApi;
+    }
+
+    const isProductionHost = window.location.hostname === 'sigcotacao.sigrede.com.br';
+    const isLocalApi = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(savedApi);
+
+    if (isProductionHost && isLocalApi) {
+      localStorage.removeItem('sig_integracao_api_url');
+      return this.defaultApi;
+    }
+
+    return savedApi.replace(/\/$/, '');
+  }
 
   getApiUrl(): string {
     return this.api;
   }
 
   setApiUrl(url: string): void {
-    this.api = (url || 'http://localhost:3300').replace(/\/$/, '');
+    this.api = (url || this.defaultApi).replace(/\/$/, '');
     localStorage.setItem('sig_integracao_api_url', this.api);
   }
 
@@ -191,6 +222,10 @@ export class IntegracaoService {
     return this.getRaw<ApiResponse<any[]>>('/logs', params);
   }
 
+  getEventosServicos(params?: ListParams): Observable<ApiResponse<any[]>> {
+    return this.getRaw<ApiResponse<any[]>>('/servicos/logs/eventos', params);
+  }
+
   getServicosStatus(force = false): Observable<ApiResponse<any>> {
     return this.getRaw<ApiResponse<any>>('/servicos/status', { force } as any);
   }
@@ -203,14 +238,15 @@ export class IntegracaoService {
     return this.postRaw<ApiResponse<any>>(`/servicos/${servico}/stop`);
   }
 
-  getLogsServico(servico: string, linhas = 300): Observable<ApiResponse<string[]>> {
-    return this.getRaw<ApiResponse<string[]>>(`/servicos/${servico}/logs`, { linhas, limit: linhas } as any);
+  getLogsServico(servico: string, linhas = 300, force = false, executionId?: string | null): Observable<ApiResponse<string[]>> {
+    return this.getRaw<ApiResponse<string[]>>(`/servicos/${servico}/logs`, { linhas, limit: linhas, force, executionId } as any);
   }
 
-  streamLogsServico(servico: string): EventSource {
+  streamLogsServico(servico: string, executionId?: string | null): EventSource {
     const token = localStorage.getItem('sig_integracao_access_token') || '';
     const params = new URLSearchParams();
     if (token) params.set('token', token);
+    if (executionId) params.set('executionId', executionId);
 
     return new EventSource(`${this.api}/servicos/${encodeURIComponent(servico)}/logs/stream?${params.toString()}`);
   }

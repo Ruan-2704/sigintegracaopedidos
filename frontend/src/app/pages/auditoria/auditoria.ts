@@ -32,7 +32,7 @@ export class AuditoriaComponent implements OnInit {
       this.acoes = [];
     }
 
-    this.carregando = force || !this.acoes.length;
+    this.carregando = true;
     this.erro = '';
 
     this.service.getAcoesPainel({
@@ -42,7 +42,10 @@ export class AuditoriaComponent implements OnInit {
       force
     }).subscribe({
       next: (res) => {
-        this.acoes = res.data || [];
+        this.acoes = (res.data || []).map((item: any) => ({
+          ...item,
+          detalheFormatado: this.formatarDetalhe(item.detalhe)
+        }));
         this.ultimaAtualizacao = new Date();
         this.salvarCacheLocal();
         this.carregando = false;
@@ -66,6 +69,14 @@ export class AuditoriaComponent implements OnInit {
     this.filtroStatus = '';
     this.limite = 50;
     this.carregar();
+  }
+
+  filtrosAtivos(): number {
+    return [this.filtroAcao, this.filtroStatus].filter(Boolean).length;
+  }
+
+  trackAcao(_: number, item: any): string {
+    return String(item.id || `${item.criado_em}-${item.acao}-${item.alvo}`);
   }
 
   formatarDetalhe(detalhe: any): string {
@@ -96,7 +107,10 @@ export class AuditoriaComponent implements OnInit {
       const item = cache?.[this.cacheId()];
 
       if (item?.data) {
-        this.acoes = item.data || [];
+        this.acoes = (item.data || []).map((acao: any) => ({
+          ...acao,
+          detalheFormatado: acao.detalheFormatado || this.formatarDetalhe(acao.detalhe)
+        }));
         this.ultimaAtualizacao = item.atualizadoEm ? new Date(item.atualizadoEm) : null;
         return true;
       }

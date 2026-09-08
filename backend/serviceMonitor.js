@@ -8,6 +8,7 @@ const {
 } = require('./remoteExecution');
 
 const { enviarAlertaOperacional } = require('./alertService');
+const { registrarServicoLog } = require('./serviceLogService');
 
 const estado = new Map();
 const cooldown = new Map();
@@ -72,6 +73,18 @@ function hostServico(chave) {
 
 function isServicoContinuo(chave) {
   return chave === 'pedidos';
+}
+
+function bancoConfigurado() {
+  return Boolean(process.env.DB_HOST && process.env.DB_USER && process.env.DB_DATABASE);
+}
+
+function registrarServicoLogSeguro(payload) {
+  if (!bancoConfigurado()) return;
+
+  registrarServicoLog(payload).catch((error) => {
+    console.error('Falha ao registrar log automatico de servico:', error.message);
+  });
 }
 
 function deveNotificar(codigo, min = Number(process.env.ALERT_COOLDOWN_MINUTES || 30)) {
@@ -209,6 +222,15 @@ async function checarLogServico(chave, servico) {
 
   if (assinaturaAtual !== assinaturaAnterior) {
     ultimoErroLog.set(chave, assinaturaAtual);
+    registrarServicoLogSeguro({
+      servico: chave,
+      nomeServico: servico.nome,
+      tipo: 'ERRO_LOG',
+      status: 'ERRO',
+      mensagem: `Erro identificado no log do serviço ${servico.nome}.`,
+      detalhe: extrairTrechoErro(log),
+      origem: scriptOuJar,
+    });
 
     await notificarServico(
       chave,
@@ -230,6 +252,22 @@ async function checarServicoContinuo(chave, servico) {
   const anterior = estado.get(chave);
 
   if (!online && (!anterior || anterior.online === true)) {
+    registrarServicoLogSeguro({
+      servico: chave,
+      nomeServico: servico.nome,
+      tipo: 'SERVICO_OFFLINE',
+      status: 'ALERTA',
+      mensagem: `O serviço ${servico.nome} está offline ou o processo Java/JAR não foi encontrado.`,
+      detalhe: {
+        porta: servico.porta,
+        pidsPorta,
+        processo: servico.jar || null,
+        pidsProcesso,
+      },
+      origem: servico.jar || servico.script || null,
+      pid: [...pidsPorta, ...pidsProcesso],
+    });
+
     await notificarServico(
       chave,
       servico,

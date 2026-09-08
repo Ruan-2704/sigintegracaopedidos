@@ -13,6 +13,7 @@ require('dotenv').config();
 const ultimoErroDetectado = {};
 const ultimoStatusServicos = {};
 const ultimoEventoManual = {};
+const execucoesPainel = {};
 const statusServicosCache = {
   data: null,
   updatedAt: 0,
@@ -32,6 +33,7 @@ const ALERT_EMAIL_ON_MANUAL_STOP =
 
 const {
   executarScript,
+  executarJar,
   lerCrontab,
   salvarCrontab,
   listarPidsPorPorta,
@@ -46,6 +48,11 @@ const { iniciarMonitoramento } = require('./serviceMonitor');
 const { enviarEmailAlerta } = require('./mailer');
 const { enviarAlertaOperacional, listarAlertas, garantirTabelaAlertas } = require('./alertService');
 const { garantirTabelaAcoesPainel, registrarAcaoPainel, listarAcoesPainel } = require('./auditService');
+const {
+  garantirTabelaServicosLogs,
+  registrarServicoLog,
+  listarServicosLogs,
+} = require('./serviceLogService');
 const { detectarErroLog } = require('./serviceMonitor');
 const { criarCache, cacheValido, salvarCache } = require('./cacheService');
 
@@ -113,6 +120,70 @@ function registrarAcaoPainelSeguro(payload) {
   });
 }
 
+function registrarServicoLogSeguro(payload) {
+  if (!bancoConfigurado()) return;
+
+  registrarServicoLog(payload).catch((error) => {
+    console.error('Falha ao registrar log de servico:', error.message);
+  });
+}
+
+function eventoServicoPayload(chave, overrides = {}) {
+  const servico = SERVICOS[chave] || {};
+
+  return {
+    servico: chave,
+    nomeServico: servico.nome || chave,
+    origem: servico.script || servico.jar || null,
+    ...overrides,
+  };
+}
+
+function registrarInicioServico(req, chave, result) {
+  registrarServicoLogSeguro(eventoServicoPayload(chave, {
+    req,
+    tipo: 'INICIAR_SERVICO',
+    status: 'SUCESSO',
+    mensagem: `${SERVICOS[chave]?.nome || chave} iniciado pelo painel.`,
+    detalhe: result,
+    pid: result?.pid,
+  }));
+}
+
+function registrarErroInicioServico(req, chave, error) {
+  registrarServicoLogSeguro(eventoServicoPayload(chave, {
+    req,
+    tipo: 'INICIAR_SERVICO',
+    status: 'ERRO',
+    mensagem: `Erro ao iniciar ${SERVICOS[chave]?.nome || chave}.`,
+    detalhe: error.stack || error.message,
+  }));
+}
+
+function scriptOuJarServico(chave) {
+  const servico = SERVICOS[chave] || {};
+  return servico.script || servico.jar || null;
+}
+
+function targetServicoLog(chave) {
+  return chave === 'pedidos' ? 'pedidos' : 'files';
+}
+
+function calcularNovasLinhas(linhasAnteriores = [], linhasAtuais = []) {
+  const limite = Math.min(linhasAnteriores.length, linhasAtuais.length);
+
+  for (let tamanho = limite; tamanho > 0; tamanho--) {
+    const anterior = linhasAnteriores.slice(-tamanho).join('\n');
+    const atual = linhasAtuais.slice(0, tamanho).join('\n');
+
+    if (anterior === atual) {
+      return linhasAtuais.slice(tamanho);
+    }
+  }
+
+  return linhasAtuais;
+}
+
 const SERVICOS = {
   geracao: {
     chave: 'geracao',
@@ -136,6 +207,46 @@ const SERVICOS = {
       `http://localhost:${Number(process.env.PEDIDOS_PORT || 8080)}/actuator/health`,
   },
 };
+
+function criarContextoExecucaoPainel(req, chave) {
+  const servico = SERVICOS[chave] || {};
+  const iniciadoEm = new Date().toISOString();
+  const executionId = `${chave}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+
+  return {
+    executionId,
+    servico: chave,
+    nomeServico: servico.nome || chave,
+    usuario: req?.usuario?.usuario || req?.usuario?.sub || 'admin',
+    iniciadoEm,
+  };
+}
+
+function registrarExecucaoPainel(chave, contexto, result) {
+  execucoesPainel[chave] = {
+    ...contexto,
+    pid: result?.pid || null,
+    marker: result?.marker || null,
+    logPath: result?.logPath || null,
+    logSource: result?.logSource || null,
+    registradoEm: Date.now(),
+  };
+
+  invalidarCacheLogsServico(chave);
+}
+
+function contextoLogServico(req, chave) {
+  const executionId = req?.query?.executionId || null;
+  const atual = execucoesPainel[chave] || null;
+
+  if (!executionId) return atual;
+  if (atual?.executionId === executionId) return atual;
+
+  return {
+    executionId,
+    marker: null,
+  };
+}
 
 function timeoutPromise(promise, ms, label = 'operação') {
   let timer;
@@ -381,6 +492,12 @@ async function consultarStatusServicos({ force = false, detectarQueda = true } =
 function invalidarCacheStatusServicos() {
   statusServicosCache.data = null;
   statusServicosCache.updatedAt = 0;
+}
+
+function invalidarCacheLogsServico(chave) {
+  Object.keys(logsServicosCache)
+    .filter((key) => key.startsWith(`${chave}:`))
+    .forEach((key) => delete logsServicosCache[key]);
 }
 
 const processos = new Map();
@@ -830,7 +947,9 @@ app.get('/servicos/status', authMiddleware, async (req, res) => {
 
 app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
   try {
-    const result = await executarScript(process.env.SCRIPT_GERACAO || 'executa_script.sh');
+    const contextoExecucao = criarContextoExecucaoPainel(req, 'geracao');
+    const result = await executarScript(process.env.SCRIPT_GERACAO || 'executa_script.sh', contextoExecucao);
+    registrarExecucaoPainel('geracao', contextoExecucao, result);
     invalidarCacheStatusServicos();
     registrarAcaoPainelSeguro({
       req,
@@ -839,6 +958,7 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
       mensagem: 'Geração iniciada pelo painel.',
       detalhe: result,
     });
+    registrarInicioServico(req, 'geracao', result);
 
     return res.json({
       success: true,
@@ -854,6 +974,7 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
       mensagem: 'Erro ao iniciar geração.',
       detalhe: error.stack || error.message,
     });
+    registrarErroInicioServico(req, 'geracao', error);
     
 
     return res.status(500).json({
@@ -866,7 +987,9 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
 
 app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
   try {
-    const result = await executarScript(process.env.SCRIPT_GERACAO || 'executa_script.sh');
+    const contextoExecucao = criarContextoExecucaoPainel(req, 'geracao');
+    const result = await executarScript(process.env.SCRIPT_GERACAO || 'executa_script.sh', contextoExecucao);
+    registrarExecucaoPainel('geracao', contextoExecucao, result);
     invalidarCacheStatusServicos();
     registrarAcaoPainelSeguro({
       req,
@@ -875,6 +998,7 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
       mensagem: 'Geração iniciada pelo painel.',
       detalhe: result,
     });
+    registrarInicioServico(req, 'geracao', result);
 
     return res.json({
       success: true,
@@ -890,6 +1014,7 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
       mensagem: 'Erro ao iniciar geração.',
       detalhe: error.stack || error.message,
     });
+    registrarErroInicioServico(req, 'geracao', error);
   
 
     return res.status(500).json({
@@ -902,7 +1027,9 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
 
 app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
   try {
-    const result = await executarScript(process.env.SCRIPT_EXCLUSAO || 'executa_exclusao_script.sh');
+    const contextoExecucao = criarContextoExecucaoPainel(req, 'exclusao');
+    const result = await executarScript(process.env.SCRIPT_EXCLUSAO || 'executa_exclusao_script.sh', contextoExecucao);
+    registrarExecucaoPainel('exclusao', contextoExecucao, result);
     invalidarCacheStatusServicos();
     registrarAcaoPainelSeguro({
       req,
@@ -911,6 +1038,7 @@ app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
       mensagem: 'Exclusão iniciada pelo painel.',
       detalhe: result,
     });
+    registrarInicioServico(req, 'exclusao', result);
 
     return res.json({
       success: true,
@@ -926,6 +1054,7 @@ app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
       mensagem: 'Erro ao iniciar exclusão.',
       detalhe: error.stack || error.message,
     });
+    registrarErroInicioServico(req, 'exclusao', error);
 
     return res.status(500).json({
       success: false,
@@ -937,7 +1066,9 @@ app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
 
 app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
   try {
-    const result = await executarScript(process.env.SCRIPT_EXCLUSAO || 'executa_exclusao_script.sh');
+    const contextoExecucao = criarContextoExecucaoPainel(req, 'exclusao');
+    const result = await executarScript(process.env.SCRIPT_EXCLUSAO || 'executa_exclusao_script.sh', contextoExecucao);
+    registrarExecucaoPainel('exclusao', contextoExecucao, result);
     invalidarCacheStatusServicos();
     registrarAcaoPainelSeguro({
       req,
@@ -946,6 +1077,7 @@ app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
       mensagem: 'Exclusão iniciada pelo painel.',
       detalhe: result,
     });
+    registrarInicioServico(req, 'exclusao', result);
 
     return res.json({
       success: true,
@@ -961,10 +1093,89 @@ app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
       mensagem: 'Erro ao iniciar exclusão.',
       detalhe: error.stack || error.message,
     });
+    registrarErroInicioServico(req, 'exclusao', error);
 
     return res.status(500).json({
       success: false,
       message: 'Erro ao iniciar exclusão',
+      error: error.message,
+    });
+  }
+});
+
+app.post('/servicos/pedidos/start', authMiddleware, async (req, res) => {
+  try {
+    const contextoExecucao = criarContextoExecucaoPainel(req, 'pedidos');
+    const result = await executarJar(process.env.JAR_PEDIDOS || 'envia-cotacao-0.0.3.jar', 'pedidos', contextoExecucao);
+    registrarExecucaoPainel('pedidos', contextoExecucao, result);
+    invalidarCacheStatusServicos();
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'INICIAR_SERVICO',
+      alvo: 'pedidos',
+      mensagem: 'API de pedidos iniciada pelo painel.',
+      detalhe: result,
+    });
+    registrarInicioServico(req, 'pedidos', result);
+
+    return res.json({
+      success: true,
+      message: 'API de pedidos iniciada com sucesso',
+      data: result,
+    });
+  } catch (error) {
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'INICIAR_SERVICO',
+      alvo: 'pedidos',
+      status: 'ERRO',
+      mensagem: 'Erro ao iniciar API de pedidos.',
+      detalhe: error.stack || error.message,
+    });
+    registrarErroInicioServico(req, 'pedidos', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao iniciar API de pedidos',
+      error: error.message,
+    });
+  }
+});
+
+app.post('/servicos/pedidos/iniciar', authMiddleware, async (req, res) => {
+  try {
+    const contextoExecucao = criarContextoExecucaoPainel(req, 'pedidos');
+    const result = await executarJar(process.env.JAR_PEDIDOS || 'envia-cotacao-0.0.3.jar', 'pedidos', contextoExecucao);
+    registrarExecucaoPainel('pedidos', contextoExecucao, result);
+    invalidarCacheStatusServicos();
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'INICIAR_SERVICO',
+      alvo: 'pedidos',
+      mensagem: 'API de pedidos iniciada pelo painel.',
+      detalhe: result,
+    });
+    registrarInicioServico(req, 'pedidos', result);
+
+    return res.json({
+      success: true,
+      message: 'API de pedidos iniciada com sucesso',
+      data: result,
+    });
+  } catch (error) {
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'INICIAR_SERVICO',
+      alvo: 'pedidos',
+      status: 'ERRO',
+      mensagem: 'Erro ao iniciar API de pedidos.',
+      detalhe: error.stack || error.message,
+    });
+    registrarErroInicioServico(req, 'pedidos', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao iniciar API de pedidos',
       error: error.message,
     });
   }
@@ -1019,6 +1230,25 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
         pidsDepois,
       },
     });
+    registrarServicoLogSeguro(eventoServicoPayload(chave, {
+      req,
+      tipo: 'PARAR_SERVICO',
+      status: pidsAntes.length && pidsDepois.length ? 'ALERTA' : 'SUCESSO',
+      mensagem: pidsAntes.length
+        ? pidsDepois.length
+          ? 'Parada solicitada, mas ainda existem processos ativos.'
+          : 'Serviço parado com sucesso.'
+        : 'Nenhum processo ativo encontrado para parar.',
+      detalhe: {
+        target,
+        porta: servico.porta,
+        servidor: servidorServico(chave),
+        pidsAntes,
+        pidsEncerrados,
+        pidsDepois,
+      },
+      pid: pidsEncerrados,
+    }));
 
     if (ALERT_EMAIL_ON_MANUAL_STOP && pidsAntes.length > 0) {
       enviarAlertaOperacional({
@@ -1063,6 +1293,13 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       mensagem: 'Erro ao parar serviço.',
       detalhe: error.stack || error.message,
     });
+    registrarServicoLogSeguro(eventoServicoPayload(req.params.servico, {
+      req,
+      tipo: 'PARAR_SERVICO',
+      status: 'ERRO',
+      mensagem: 'Erro ao parar serviço.',
+      detalhe: error.stack || error.message,
+    }));
 
     return erroResponse(res, 500, 'Erro ao parar serviço', error);
   }
@@ -1073,7 +1310,9 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
     const servico = req.params.servico;
     const limit = Number(req.query.limit || req.query.linhas || 300);
     const force = String(req.query.force || 'false') === 'true';
-    const cacheKey = `${servico}:${limit}`;
+    const contextoExecucao = contextoLogServico(req, servico);
+    const executionId = contextoExecucao?.executionId || 'ultimo';
+    const cacheKey = `${servico}:${limit}:${executionId}`;
     const cache = logsServicosCache[cacheKey];
 
     let scriptName;
@@ -1095,6 +1334,20 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
     const agora = Date.now();
 
     if (!force && cache?.content && agora - cache.updatedAt < LOGS_CACHE_TTL_MS) {
+      registrarServicoLogSeguro(eventoServicoPayload(servico, {
+        req,
+        tipo: 'CONSULTA_LOG',
+        status: 'INFO',
+        mensagem: `Log do serviço consultado pelo painel a partir do cache (${limit} linhas).`,
+        detalhe: {
+          linhas: cache.content.split('\n').filter(Boolean).length,
+          target,
+          limit,
+          cache: true,
+          cacheAgeMs: agora - cache.updatedAt,
+        },
+      }));
+
       return res.json({
         success: true,
         data: cache.content.split('\n'),
@@ -1103,11 +1356,27 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
           cache: true,
           cacheAgeMs: agora - cache.updatedAt,
           atualizadoEm: cache.atualizadoEm,
+          executionId: contextoExecucao?.executionId || null,
+          marker: contextoExecucao?.marker || null,
+          logPath: contextoExecucao?.logPath || null,
+          logSource: contextoExecucao?.logSource || null,
         },
       });
     }
 
-    const content = await lerLogRemoto(scriptName, limit, target);
+    const content = await lerLogRemoto(scriptName, limit, target, contextoExecucao || {});
+    registrarServicoLogSeguro(eventoServicoPayload(servico, {
+      req,
+      tipo: 'CONSULTA_LOG',
+      status: detectarErroLog(content) ? 'ALERTA' : 'SUCESSO',
+      mensagem: `Log do serviço consultado pelo painel (${limit} linhas).`,
+      detalhe: {
+        linhas: content.split('\n').filter(Boolean).length,
+        target,
+        limit,
+        contemErro: detectarErroLog(content),
+      },
+    }));
     logsServicosCache[cacheKey] = {
       content,
       updatedAt: Date.now(),
@@ -1122,6 +1391,10 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
         cache: false,
         cacheAgeMs: 0,
         atualizadoEm: logsServicosCache[cacheKey].atualizadoEm,
+        executionId: contextoExecucao?.executionId || null,
+        marker: contextoExecucao?.marker || null,
+        logPath: contextoExecucao?.logPath || null,
+        logSource: contextoExecucao?.logSource || null,
       },
     });
   } catch (error) {
@@ -1133,7 +1406,30 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/servicos/:servico/logs/stream', (req, res) => {
+app.get('/servicos/logs/eventos', authMiddleware, async (req, res) => {
+  try {
+    const payload = await listarServicosLogs({
+      page: req.query.page,
+      limit: req.query.limit,
+      servico: req.query.servico,
+      tipo: req.query.tipo,
+      status: req.query.status,
+      search: req.query.search,
+      dataInicio: req.query.dataInicio || req.query.dataInicial || req.query.inicio,
+      dataFim: req.query.dataFim || req.query.dataFinal || req.query.fim,
+    });
+
+    return res.json({
+      success: true,
+      data: payload.rows,
+      meta: payload.meta,
+    });
+  } catch (error) {
+    return erroResponse(res, 500, 'Erro ao buscar eventos dos serviços', error);
+  }
+});
+
+app.get('/servicos/:servico/logs/stream', async (req, res) => {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : req.query.token;
   const payload = validarToken(token);
@@ -1148,51 +1444,73 @@ app.get('/servicos/:servico/logs/stream', (req, res) => {
     return erroResponse(res, 400, 'Serviço inválido.');
   }
 
-  const filePath = caminhoLog(chave);
+  const scriptName = scriptOuJarServico(chave);
+
+  if (!scriptName) {
+    return erroResponse(res, 400, 'Serviço sem script ou JAR configurado.');
+  }
+
+  const target = targetServicoLog(chave);
+  const linhasStream = Math.min(Math.max(Number(req.query.linhas || 300), 80), 800);
+  const contextoExecucao = contextoLogServico(req, chave);
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders?.();
 
-  let position = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+  let fechado = false;
+  let linhasAnteriores = [];
 
-  const enviar = (payload) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  const enviar = (data) => {
+    if (!fechado) {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    }
+  };
 
-  enviar({
-    tipo: 'init',
-    linhas: lerUltimasLinhas(filePath, 80),
-  });
-
-  const interval = setInterval(() => {
+  const lerEnviar = async (tipo = 'append') => {
     try {
-      if (!fs.existsSync(filePath)) return;
+      const content = await lerLogRemoto(scriptName, linhasStream, target, contextoExecucao || {});
+      const linhasAtuais = String(content || '').split(/\r?\n/).filter(Boolean);
 
-      const stat = fs.statSync(filePath);
-
-      if (stat.size < position) {
-        position = 0;
+      if (tipo === 'init') {
+        linhasAnteriores = linhasAtuais;
+        enviar({
+          tipo: 'init',
+          linhas: linhasAtuais,
+          meta: {
+            target,
+            linhas: linhasAtuais.length,
+            atualizadoEm: new Date().toISOString(),
+            executionId: contextoExecucao?.executionId || null,
+            marker: contextoExecucao?.marker || null,
+            logPath: contextoExecucao?.logPath || null,
+            logSource: contextoExecucao?.logSource || null,
+          },
+        });
+        return;
       }
 
-      if (stat.size > position) {
-        const stream = fs.createReadStream(filePath, {
-          start: position,
-          end: stat.size,
-        });
+      const assinaturaAnterior = linhasAnteriores.join('\n');
+      const assinaturaAtual = linhasAtuais.join('\n');
 
-        let chunk = '';
+      if (assinaturaAtual && assinaturaAtual !== assinaturaAnterior) {
+        const novasLinhas = calcularNovasLinhas(linhasAnteriores, linhasAtuais);
+        linhasAnteriores = linhasAtuais;
 
-        stream.on('data', (data) => {
-          chunk += data.toString('utf8');
-        });
-
-        stream.on('end', () => {
-          position = stat.size;
-
-          enviar({
-            tipo: 'append',
-            linhas: chunk.split(/\r?\n/).filter(Boolean),
-          });
+        enviar({
+          tipo: 'append',
+          novasLinhas: novasLinhas.length === linhasAtuais.length ? [] : novasLinhas,
+          linhas: novasLinhas.length === linhasAtuais.length ? linhasAtuais : undefined,
+          meta: {
+            target,
+            linhas: linhasAtuais.length,
+            atualizadoEm: new Date().toISOString(),
+            executionId: contextoExecucao?.executionId || null,
+            marker: contextoExecucao?.marker || null,
+            logPath: contextoExecucao?.logPath || null,
+            logSource: contextoExecucao?.logSource || null,
+          },
         });
       }
     } catch (error) {
@@ -1201,9 +1519,23 @@ app.get('/servicos/:servico/logs/stream', (req, res) => {
         mensagem: error.message,
       });
     }
-  }, 1500);
+  };
 
-  req.on('close', () => clearInterval(interval));
+  await lerEnviar('init');
+
+  const interval = setInterval(() => {
+    lerEnviar().catch((error) => {
+      enviar({
+        tipo: 'erro',
+        mensagem: error.message,
+      });
+    });
+  }, Number(process.env.LOG_STREAM_INTERVAL_MS || 3500));
+
+  req.on('close', () => {
+    fechado = true;
+    clearInterval(interval);
+  });
 });
 
 /* =========================
@@ -1911,7 +2243,52 @@ app.get('/logs', async (req, res) => {
       referencia: log.id,
     }));
 
-    let logs = [...logsTentativas, ...logsPedidos, ...arquivos];
+    const eventosServicosPayload = bancoConfigurado()
+      ? await listarServicosLogs({
+          page: 1,
+          limit: 200,
+          servico: req.query.servico,
+          tipo: req.query.tipo,
+          status: req.query.status,
+          search,
+          dataInicio: req.query.dataInicio || req.query.dataInicial || req.query.inicio,
+          dataFim: req.query.dataFim || req.query.dataFinal || req.query.fim,
+        })
+      : { rows: [] };
+
+    const eventosServicosFiltrados = eventosServicosPayload.rows.filter((log) =>
+      req.query.tipo ? true : log.tipo !== 'STREAM_LOG'
+    );
+
+    const logsServicos = eventosServicosFiltrados.map((log) => ({
+      tipo: log.tipo,
+      status: log.status,
+      descricao: log.mensagem,
+      origem: log.origem,
+      servico: log.servico,
+      nomeServico: log.nome_servico,
+      pedidoIntegrador: null,
+      campanha: null,
+      cnpjCliente: null,
+      payload: null,
+      erro: log.status === 'ERRO' ? log.detalhe : null,
+      detalhe: log.detalhe,
+      data: log.criado_em,
+      referencia: `servico-log-${log.id}`,
+      usuario: log.usuario,
+      arquivoLog: log.arquivo_log,
+      pid: log.pid,
+    }));
+
+    let logs = [...logsServicos, ...logsTentativas, ...logsPedidos, ...arquivos];
+
+    if (req.query.servico) {
+      logs = logs.filter((log) => log.servico === req.query.servico);
+    }
+
+    if (req.query.tipo) {
+      logs = logs.filter((log) => log.tipo === req.query.tipo);
+    }
 
     if (req.query.status) {
       logs = logs.filter((log) => log.status === req.query.status);
@@ -2081,6 +2458,7 @@ app.listen(PORT, () => {
   if (bancoConfigurado()) {
     garantirTabelaAlertas().catch((e) => console.error('Falha ao garantir tabela de alertas:', e.message));
     garantirTabelaAcoesPainel().catch((e) => console.error('Falha ao garantir tabela de acoes do painel:', e.message));
+    garantirTabelaServicosLogs().catch((e) => console.error('Falha ao garantir tabela de logs de servicos:', e.message));
   } else {
     console.warn('Tabela de alertas nao verificada: configure DB_HOST, DB_USER e DB_DATABASE para habilitar banco.');
   }
