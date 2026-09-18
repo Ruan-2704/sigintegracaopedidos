@@ -34,7 +34,7 @@
         <td><span class="badge neutral">{{ item.IdCampanha }}</span><small>{{ item.NomeCampanha }}</small></td>
         <td>{{ item.pedidoIntegradora }}</td>
         <td><span class="badge good">{{ item.integradora || '-' }}</span></td>
-        <td>{{ item.dataPedido | date:'dd/MM/yyyy HH:mm' }}</td>
+        <td>{{ formatarDataPedido(item) }}</td>
         <td><button type="button" class="btn-table" (click)="visualizar(item)">Ver</button></td>
       </tr>
     </tbody>

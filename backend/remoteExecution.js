@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 const { spawn, exec } = require('child_process');
 const { runSshCommand } = require('./sshClient');
 
@@ -101,6 +102,15 @@ function linhaRuidoLog(linha = '') {
   if (/Invalid character found in method name/i.test(texto)) return true;
   if (/HTTP method names must be tokens/i.test(texto)) return true;
   if (/Path contains "\.\.\/" after call to StringUtils#cleanPath/i.test(texto)) return true;
+  if (/pthread_create failed/i.test(texto)) return true;
+  if (/unable to create native thread/i.test(texto)) return true;
+  if (/Failed to start the native thread/i.test(texto)) return true;
+  if (/Failed to start thread "Unknown thread"/i.test(texto)) return true;
+  if (/Failed to start bean 'webServerStartStop'/i.test(texto)) return true;
+  if (/Application run failed/i.test(texto)) return true;
+  if (/Exception encountered during context initialization - cancelling refresh attempt/i.test(texto)) return true;
+  if (/Invocation of close method failed on bean with name 'dataSource'/i.test(texto)) return true;
+  if (/possibly out of memory or process\/resource limits reached/i.test(texto)) return true;
   if (/^\s*at org\.apache\.coyote\./i.test(texto)) return true;
   if (/^\s*at org\.apache\.tomcat\./i.test(texto)) return true;
   if (/^\s*at org\.springframework\.web\.servlet\./i.test(texto)) return true;
@@ -126,6 +136,45 @@ function filtrarLinhasLogOperacional(content = '') {
       vistosDuplicados.add(chaveDuplicado);
       return true;
     });
+}
+
+function extrairDataLinhaLog(linha = '') {
+  const texto = String(linha || '');
+  const iso = texto.match(/\b(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:[.,]\d+)?(?:([+-]\d{2}:\d{2})|Z)?/);
+
+  if (iso) {
+    const timezone = iso[3] || '';
+    const data = new Date(`${iso[1]}T${iso[2]}${timezone}`);
+    return Number.isNaN(data.getTime()) ? null : data;
+  }
+
+  const br = texto.match(/\b(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}:\d{2}:\d{2})\b/);
+  if (br) {
+    const data = new Date(`${br[3]}-${br[2]}-${br[1]}T${br[4]}`);
+    return Number.isNaN(data.getTime()) ? null : data;
+  }
+
+  return null;
+}
+
+function filtrarLinhasPorConsulta(linhas = [], options = {}) {
+  let filtradas = Array.isArray(linhas) ? linhas : [];
+  const search = String(options.search || '').trim().toLowerCase();
+  const dias = Math.min(Math.max(Number(options.dias || 0), 0), 30);
+
+  if (dias > 0) {
+    const limite = Date.now() - dias * 24 * 60 * 60 * 1000;
+    filtradas = filtradas.filter((linha) => {
+      const data = extrairDataLinhaLog(linha);
+      return data ? data.getTime() >= limite : true;
+    });
+  }
+
+  if (search) {
+    filtradas = filtradas.filter((linha) => String(linha || '').toLowerCase().includes(search));
+  }
+
+  return filtradas;
 }
 
 function ordenarCandidatosLogLeitura(candidatos = []) {
@@ -485,6 +534,89 @@ async function executarComando(command, target = 'files') {
   });
 }
 
+async function lerArquivoScript(scriptName, target = 'files') {
+  const workdir = workdirFor(target);
+
+  if (isSshMode()) {
+    const scriptPath = `${workdir}/${scriptName}`;
+    const result = await runSshCommand(`cat ${shellEscape(scriptPath)}`, target);
+
+    if (result.code !== 0) {
+      throw new Error(result.stderr || 'Erro ao ler script via SSH');
+    }
+
+    return {
+      script: scriptName,
+      target,
+      workdir,
+      path: scriptPath,
+      content: result.stdout || '',
+    };
+  }
+
+  const folder = requireLocalWorkdir();
+  const scriptPath = path.join(folder, scriptName);
+
+  return {
+    script: scriptName,
+    target,
+    workdir: folder,
+    path: scriptPath,
+    content: fs.readFileSync(scriptPath, 'utf8'),
+  };
+}
+
+async function salvarArquivoScript(scriptName, content, target = 'files') {
+  const workdir = workdirFor(target);
+  const safeContent = Buffer.from(String(content || ''), 'utf8').toString('base64');
+  const backupSuffix = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
+
+  if (isSshMode()) {
+    const scriptPath = `${workdir}/${scriptName}`;
+    const backupPath = `${scriptPath}.bak-${backupSuffix}`;
+    const command = [
+      `test -f ${shellEscape(scriptPath)}`,
+      `cp ${shellEscape(scriptPath)} ${shellEscape(backupPath)}`,
+      `printf '%s' ${shellEscape(safeContent)} | base64 -d > ${shellEscape(scriptPath)}`,
+      `chmod +x ${shellEscape(scriptPath)}`,
+    ].join(' && ');
+    const result = await runSshCommand(command, target);
+
+    if (result.code !== 0) {
+      throw new Error(result.stderr || 'Erro ao salvar script via SSH');
+    }
+
+    return {
+      script: scriptName,
+      target,
+      workdir,
+      path: scriptPath,
+      backupPath,
+    };
+  }
+
+  const folder = requireLocalWorkdir();
+  const scriptPath = path.join(folder, scriptName);
+  const backupPath = `${scriptPath}.bak-${backupSuffix}`;
+
+  fs.copyFileSync(scriptPath, backupPath);
+  fs.writeFileSync(scriptPath, String(content || ''), 'utf8');
+
+  try {
+    fs.chmodSync(scriptPath, 0o755);
+  } catch {
+    // Windows local mode may not support chmod in the same way as Linux.
+  }
+
+  return {
+    script: scriptName,
+    target,
+    workdir: folder,
+    path: scriptPath,
+    backupPath,
+  };
+}
+
 async function lerCrontab() {
   if (isSshMode()) {
     const result = await runSshCommand('crontab -l 2>/dev/null || true', 'files');
@@ -595,9 +727,12 @@ async function matarPidsPorPorta(port, target = 'files') {
 async function lerLogRemoto(scriptName, linhas = 300, target = 'files', options = {}) {
   const workdir = workdirFor(target);
   const n = Math.max(Number(linhas) || 300, 50);
+  const consultaHistorica = Number(options.dias || 0) > 0 || String(options.search || '').trim();
   const linhasBusca = options.executionId || options.marker
     ? Math.max(n, Number(options.linhasBusca || 4000))
-    : n;
+    : consultaHistorica
+      ? Math.max(n, Number(options.linhasBusca || 8000))
+      : n;
 
   if (isSshMode()) {
     const candidatos = await listarCandidatosLog(scriptName, target);
@@ -625,7 +760,7 @@ async function lerLogRemoto(scriptName, linhas = 300, target = 'files', options 
     const result = await runSshCommand(command, target);
 
     const content = recortarDesdeMarcador(result.stdout || result.stderr || '', options);
-    return filtrarLinhasLogOperacional(content).slice(-n).join('\n');
+    return filtrarLinhasPorConsulta(filtrarLinhasLogOperacional(content), options).slice(-n).join('\n');
   }
 
   if (isWindowsLocalMode()) {
@@ -641,7 +776,7 @@ async function lerLogRemoto(scriptName, linhas = 300, target = 'files', options 
   );
 
   const content = recortarDesdeMarcador(stdout || '', options);
-  return filtrarLinhasLogOperacional(content).slice(-n).join('\n');
+  return filtrarLinhasPorConsulta(filtrarLinhasLogOperacional(content), options).slice(-n).join('\n');
 }
 
 function linhaErroLogPedidos(linha = '') {
@@ -843,9 +978,11 @@ async function diagnosticarLogsCrontab(servicos = {}) {
   return itens;
 }
 
-async function lerLogsCrontab(servicos = {}, linhas = 200) {
+async function lerLogsCrontab(servicos = {}, linhas = 200, options = {}) {
   const itens = [];
   const n = Math.max(Number(linhas) || 200, 50);
+  const consultaHistorica = Number(options.dias || 0) > 0 || String(options.search || '').trim();
+  const linhasBusca = consultaHistorica ? Math.max(n, Number(options.linhasBusca || 8000)) : n;
 
   for (const [chave, servico] of Object.entries(servicos)) {
     const scriptName = servico.script || servico.jar;
@@ -874,7 +1011,7 @@ async function lerLogsCrontab(servicos = {}, linhas = 200) {
       .map((item) => `
         if [ -f ${shellEscape(item.path)} ]; then
           echo '__SIG_LOG_FOUND__|${item.path}|${item.source}';
-          tail -n ${n} ${shellEscape(item.path)};
+          tail -n ${linhasBusca} ${shellEscape(item.path)};
           exit 0;
         fi
       `)
@@ -901,9 +1038,10 @@ async function lerLogsCrontab(servicos = {}, linhas = 200) {
           source: 'nao_encontrado',
           existe: false,
         };
-    const linhasLog = found
+    const linhasLogBase = found
       ? filtrarLinhasLogOperacional(linhasSaida.slice(1).join('\n'))
       : filtrarLinhasLogOperacional(linhasSaida.join('\n'));
+    const linhasLog = filtrarLinhasPorConsulta(linhasLogBase, options).slice(-n);
 
     itens.push({
       chave,
@@ -925,6 +1063,8 @@ module.exports = {
   executarScript,
   executarJar,
   executarComando,
+  lerArquivoScript,
+  salvarArquivoScript,
   lerCrontab,
   salvarCrontab,
   listarPidsPorPorta,

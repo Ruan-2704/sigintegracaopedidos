@@ -31,13 +31,60 @@ export class LogsComponent implements OnInit {
   itensPorPagina = 20;
   totalRegistros = 0;
   totalPaginas = 1;
+  abaAtiva: 'operacionais' | 'pedidos-api' | 'cron' | 'auditoria' = 'operacionais';
+  logsCron: any[] = [];
+  logsCompletosAbertos: { [key: string]: boolean } = {};
+  carregandoLogsCron = false;
+  linhasLogCron = 200;
+  erroLogsCron = '';
+  acoesPainel: any[] = [];
+  carregandoAuditoria = false;
+  erroAuditoria = '';
+  filtroAcaoAuditoria = '';
+  filtroStatusAuditoria = '';
+  limiteAuditoria = 50;
+  ultimaAtualizacaoAuditoria: Date | null = null;
+  private readonly cacheKeyLogsCron = 'sig_integracao_cron_logs_cache';
+  private readonly cacheKeyAuditoria = 'sig_integracao_auditoria_cache';
 
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
 
   ngOnInit(): void {
+    this.definirAbaInicial();
     this.restaurarCacheLocal();
     this.restaurarCachePedidosApi();
-    this.carregar();
+    this.restaurarCacheLogsCron();
+    this.restaurarCacheAuditoria();
+    this.carregarDadosAba(false);
+  }
+
+  trocarAba(aba: 'operacionais' | 'pedidos-api' | 'cron' | 'auditoria'): void {
+    this.abaAtiva = aba;
+    this.carregarDadosAba(false);
+  }
+
+  atualizarAba(): void {
+    this.carregarDadosAba(true);
+  }
+
+  private definirAbaInicial(): void {
+    const path = window.location.pathname.toLowerCase();
+    const aba = new URLSearchParams(window.location.search).get('aba');
+
+    if (path.includes('/auditoria') || aba === 'acoes' || aba === 'auditoria') {
+      this.abaAtiva = 'auditoria';
+    } else if (path.includes('/cron') || aba === 'cron') {
+      this.abaAtiva = 'cron';
+    } else if (aba === 'pedidos-api') {
+      this.abaAtiva = 'pedidos-api';
+    }
+  }
+
+  private carregarDadosAba(force = false): void {
+    if (this.abaAtiva === 'operacionais') this.carregar(force);
+    if (this.abaAtiva === 'pedidos-api') this.carregarLogErrosPedidos(force);
+    if (this.abaAtiva === 'cron') this.carregarLogsCron(force);
+    if (this.abaAtiva === 'auditoria') this.carregarAuditoria(force);
   }
 
   carregar(force = false): void {
@@ -208,6 +255,116 @@ export class LogsComponent implements OnInit {
     return !this.linhaPedidoApiErro(linha) && /(WARN|alerta|payloadSigrede|rastreio|motivo|bucket|campanha)/i.test(linha || '');
   }
 
+  carregarLogsCron(force = false): void {
+    const temCache = !force && this.restaurarCacheLogsCron();
+
+    if (!force && !temCache) this.logsCron = [];
+
+    this.carregandoLogsCron = force || !this.logsCron.length;
+    this.erroLogsCron = '';
+
+    this.service.getLogsCron(this.linhasLogCron, force).subscribe({
+      next: (res) => {
+        this.logsCron = res.data || [];
+        this.salvarCacheLogsCron();
+        this.carregandoLogsCron = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Erro ao carregar logs do crontab:', err);
+        this.erroLogsCron = 'Erro ao carregar logs do crontab.';
+        this.carregandoLogsCron = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  alternarLogCronCompleto(chave: string): void {
+    this.logsCompletosAbertos[chave] = !this.logsCompletosAbertos[chave];
+    this.cdr.detectChanges();
+  }
+
+  resumoLogCron(item: any): string {
+    const linhas = item?.linhas || [];
+    if (!linhas.length) return 'Nenhuma linha de log encontrada.';
+    return linhas.slice(-this.linhasLogCron).join('\n');
+  }
+
+  eventosLogCron(item: any): any[] {
+    return item?.resumo?.eventos || [];
+  }
+
+  statusResumoCron(item: any): string {
+    if (!item?.arquivo?.existe) return 'Log nao encontrado';
+    if (item?.resumo?.erros) return `${item.resumo.erros} erro(s)`;
+    if (item?.resumo?.alertas) return `${item.resumo.alertas} alerta(s)`;
+    return `${item?.resumo?.totalEventos || 0} evento(s)`;
+  }
+
+  carregarAuditoria(force = false): void {
+    const temCache = !force && this.restaurarCacheAuditoria();
+
+    if (!force && !temCache) this.acoesPainel = [];
+
+    this.carregandoAuditoria = force || !this.acoesPainel.length;
+    this.erroAuditoria = '';
+
+    this.service.getAcoesPainel({
+      limit: this.limiteAuditoria,
+      acao: this.filtroAcaoAuditoria,
+      status: this.filtroStatusAuditoria,
+      force
+    }).subscribe({
+      next: (res) => {
+        this.acoesPainel = (res.data || []).map((item: any) => ({
+          ...item,
+          detalheFormatado: this.formatarDetalheAuditoria(item.detalhe)
+        }));
+        this.ultimaAtualizacaoAuditoria = new Date();
+        this.salvarCacheAuditoria();
+        this.carregandoAuditoria = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Erro ao carregar acoes do painel:', err);
+        this.erroAuditoria = 'Erro ao carregar acoes do painel.';
+        this.carregandoAuditoria = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  aplicarFiltroAuditoria(): void {
+    this.carregarAuditoria(true);
+  }
+
+  limparFiltroAuditoria(): void {
+    this.filtroAcaoAuditoria = '';
+    this.filtroStatusAuditoria = '';
+    this.limiteAuditoria = 50;
+    this.carregarAuditoria(true);
+  }
+
+  filtrosAuditoriaAtivos(): number {
+    return [this.filtroAcaoAuditoria, this.filtroStatusAuditoria].filter(Boolean).length;
+  }
+
+  trackAcao(_: number, item: any): string {
+    return String(item.id || `${item.criado_em}-${item.acao}-${item.alvo}`);
+  }
+
+  formatarDetalheAuditoria(detalhe: any): string {
+    if (!detalhe) return '-';
+
+    if (typeof detalhe !== 'string') return JSON.stringify(detalhe, null, 2);
+
+    try {
+      return JSON.stringify(JSON.parse(detalhe), null, 2);
+    } catch {
+      return detalhe;
+    }
+  }
+
   private cacheId(): string {
     return JSON.stringify({
       page: this.paginaAtual,
@@ -281,6 +438,80 @@ export class LogsComponent implements OnInit {
     }
 
     return false;
+  }
+
+  private cacheIdLogsCron(): string {
+    return String(this.linhasLogCron);
+  }
+
+  private restaurarCacheLogsCron(): boolean {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKeyLogsCron) || '{}');
+      const item = cache?.[this.cacheIdLogsCron()];
+
+      if (item?.data) {
+        this.logsCron = item.data || [];
+        return true;
+      }
+    } catch {
+      localStorage.removeItem(this.cacheKeyLogsCron);
+    }
+
+    return false;
+  }
+
+  private salvarCacheLogsCron(): void {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKeyLogsCron) || '{}');
+      cache[this.cacheIdLogsCron()] = {
+        data: this.logsCron,
+        atualizadoEm: new Date().toISOString()
+      };
+      localStorage.setItem(this.cacheKeyLogsCron, JSON.stringify(cache));
+    } catch {
+      localStorage.removeItem(this.cacheKeyLogsCron);
+    }
+  }
+
+  private cacheIdAuditoria(): string {
+    return JSON.stringify({
+      acao: this.filtroAcaoAuditoria || '',
+      status: this.filtroStatusAuditoria || '',
+      limit: this.limiteAuditoria
+    });
+  }
+
+  private restaurarCacheAuditoria(): boolean {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKeyAuditoria) || '{}');
+      const item = cache?.[this.cacheIdAuditoria()];
+
+      if (item?.data) {
+        this.acoesPainel = (item.data || []).map((acao: any) => ({
+          ...acao,
+          detalheFormatado: acao.detalheFormatado || this.formatarDetalheAuditoria(acao.detalhe)
+        }));
+        this.ultimaAtualizacaoAuditoria = item.atualizadoEm ? new Date(item.atualizadoEm) : null;
+        return true;
+      }
+    } catch {
+      localStorage.removeItem(this.cacheKeyAuditoria);
+    }
+
+    return false;
+  }
+
+  private salvarCacheAuditoria(): void {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKeyAuditoria) || '{}');
+      cache[this.cacheIdAuditoria()] = {
+        data: this.acoesPainel,
+        atualizadoEm: new Date().toISOString()
+      };
+      localStorage.setItem(this.cacheKeyAuditoria, JSON.stringify(cache));
+    } catch {
+      localStorage.removeItem(this.cacheKeyAuditoria);
+    }
   }
 
   private salvarCachePedidosApi(): void {

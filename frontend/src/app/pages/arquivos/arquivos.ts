@@ -26,8 +26,13 @@ export class ArquivosComponent implements OnInit {
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
 
   ngOnInit(): void {
+    const search = new URLSearchParams(window.location.search).get('search');
+    if (search) {
+      this.filtro = search;
+      this.paginaAtual = 1;
+    }
     this.restaurarCacheLocal();
-    this.carregar();
+    this.carregar(Boolean(search));
   }
 
   carregar(force = false): void {

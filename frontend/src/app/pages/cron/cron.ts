@@ -10,11 +10,13 @@ import { IntegracaoService } from '../../services/service';
 })
 export class CronComponent implements OnInit {
   private readonly cacheKeyLogsCron = 'sig_integracao_cron_logs_cache';
+  private readonly cacheKeyCron = 'sig_integracao_crontab_cache';
   crontab = '';
   diagnosticoLogs: any[] = [];
   logsCron: any[] = [];
   logsCompletosAbertos: { [key: string]: boolean } = {};
   escritaLiberada = false;
+  crontabCarregado = false;
   carregando = false;
   carregandoDiagnostico = false;
   carregandoLogs = false;
@@ -25,6 +27,7 @@ export class CronComponent implements OnInit {
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
 
   ngOnInit(): void {
+    this.restaurarCacheCron();
     this.restaurarCacheLogsCron();
     this.carregar();
   }
@@ -37,6 +40,8 @@ export class CronComponent implements OnInit {
       next: (res) => {
         this.crontab = res.data?.crontab || '';
         this.escritaLiberada = !!res.data?.escritaLiberada;
+        this.crontabCarregado = true;
+        this.salvarCacheCron();
         this.carregando = false;
         this.carregarDiagnosticoLogs();
         this.carregarLogsCron();
@@ -44,6 +49,7 @@ export class CronComponent implements OnInit {
       },
       error: (err) => {
         this.erro = err?.error?.message || 'Erro ao carregar crontab.';
+        this.crontabCarregado = true;
         this.carregando = false;
         this.cdr.detectChanges();
       }
@@ -58,6 +64,7 @@ export class CronComponent implements OnInit {
     this.service.salvarCron(this.crontab).subscribe({
       next: () => {
         this.sucesso = 'Crontab salvo com sucesso.';
+        this.salvarCacheCron();
         this.carregando = false;
         this.cdr.detectChanges();
       },
@@ -134,6 +141,32 @@ export class CronComponent implements OnInit {
     if (item?.resumo?.erros) return `${item.resumo.erros} erro(s)`;
     if (item?.resumo?.alertas) return `${item.resumo.alertas} alerta(s)`;
     return `${item?.resumo?.totalEventos || 0} evento(s)`;
+  }
+
+  private restaurarCacheCron(): void {
+    try {
+      const cache = JSON.parse(localStorage.getItem(this.cacheKeyCron) || 'null');
+
+      if (cache?.crontab) {
+        this.crontab = cache.crontab;
+        this.escritaLiberada = !!cache.escritaLiberada;
+        this.crontabCarregado = true;
+      }
+    } catch {
+      localStorage.removeItem(this.cacheKeyCron);
+    }
+  }
+
+  private salvarCacheCron(): void {
+    try {
+      localStorage.setItem(this.cacheKeyCron, JSON.stringify({
+        crontab: this.crontab,
+        escritaLiberada: this.escritaLiberada,
+        atualizadoEm: new Date().toISOString()
+      }));
+    } catch {
+      localStorage.removeItem(this.cacheKeyCron);
+    }
   }
 
   private cacheIdLogsCron(): string {
