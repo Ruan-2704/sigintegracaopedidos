@@ -40,6 +40,7 @@ export interface ServicoStatus {
   nome: string;
   porta?: number;
   online: boolean;
+  statusOperacional?: string | null;
   pids: string[];
   emExecucaoPainel: boolean;
   pidPainel?: number | null;
@@ -242,8 +243,29 @@ export class IntegracaoService {
     return this.postRaw<ApiResponse<any>>(`/servicos/${servico}/stop`);
   }
 
-  getLogsServico(servico: string, linhas = 300, force = false, executionId?: string | null): Observable<ApiResponse<string[]>> {
-    return this.getRaw<ApiResponse<string[]>>(`/servicos/${servico}/logs`, { linhas, limit: linhas, force, executionId } as any);
+  getLogsServico(
+    servico: string,
+    linhas = 300,
+    force = false,
+    executionId?: string | null,
+    filtros?: { dias?: number | null; search?: string | null }
+  ): Observable<ApiResponse<string[]>> {
+    return this.getRaw<ApiResponse<string[]>>(`/servicos/${servico}/logs`, {
+      linhas,
+      limit: linhas,
+      force,
+      executionId,
+      dias: filtros?.dias || undefined,
+      search: filtros?.search || undefined,
+    } as any);
+  }
+
+  getScriptServico(servico: string): Observable<ApiResponse<any>> {
+    return this.getRaw<ApiResponse<any>>(`/servicos/${servico}/script`);
+  }
+
+  salvarScriptServico(servico: string, content: string): Observable<ApiResponse<any>> {
+    return this.postRaw<ApiResponse<any>>(`/servicos/${servico}/script`, { content });
   }
 
   streamLogsServico(servico: string, executionId?: string | null): EventSource {
@@ -263,8 +285,14 @@ export class IntegracaoService {
     return this.getRaw<ApiResponse<any[]>>('/cron/logs/diagnostico');
   }
 
-  getLogsCron(linhas = 200, force = false): Observable<ApiResponse<any[]>> {
-    return this.getRaw<ApiResponse<any[]>>('/cron/logs', { linhas, limit: linhas, force } as any);
+  getLogsCron(linhas = 200, force = false, filtros?: { dias?: number | null; search?: string | null }): Observable<ApiResponse<any[]>> {
+    return this.getRaw<ApiResponse<any[]>>('/cron/logs', {
+      linhas,
+      limit: linhas,
+      force,
+      dias: filtros?.dias || undefined,
+      search: filtros?.search || undefined,
+    } as any);
   }
 
   getAcoesPainel(params?: ListParams): Observable<ApiResponse<any[]>> {

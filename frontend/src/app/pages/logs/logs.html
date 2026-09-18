@@ -1,78 +1,141 @@
 <div class="page-title">
   <div>
-    <h2>Logs Operacionais</h2>
-    <p>Linha do tempo dos serviços, arquivos, pedidos e movimentações recentes.</p>
+    <h2>Logs e Auditoria</h2>
+    <p>Consulta unificada de eventos operacionais, erros da API de pedidos, execucoes do cron e acoes do painel.</p>
   </div>
-  <button type="button" class="btn-primary" (click)="carregar(true)" [disabled]="carregando">
-    {{ carregando ? 'Atualizando...' : 'Atualizar' }}
+  <button type="button" class="btn-primary" (click)="atualizarAba()" [disabled]="carregando || carregandoPedidosApi || carregandoLogsCron || carregandoAuditoria">
+    Atualizar grupo
   </button>
 </div>
 
-<section class="filters-card logs-filter-grid">
-  <div class="field grow">
-    <label>Busca</label>
-    <input type="text" placeholder="Buscar por serviço, tipo, mensagem ou detalhe" [(ngModel)]="filtro" (keyup.enter)="aplicarFiltro()" />
+<section class="log-groups">
+  <button type="button" [class.active]="abaAtiva === 'operacionais'" (click)="trocarAba('operacionais')">
+    <strong>Eventos operacionais</strong>
+    <span>servicos, arquivos e pedidos</span>
+  </button>
+  <button type="button" [class.active]="abaAtiva === 'pedidos-api'" (click)="trocarAba('pedidos-api')">
+    <strong>Erros da API de pedidos</strong>
+    <span>payloads, login e rastreios</span>
+  </button>
+  <button type="button" [class.active]="abaAtiva === 'cron'" (click)="trocarAba('cron')">
+    <strong>Logs do crontab</strong>
+    <span>geracao e exclusao</span>
+  </button>
+  <button type="button" [class.active]="abaAtiva === 'auditoria'" (click)="trocarAba('auditoria')">
+    <strong>Acoes do painel</strong>
+    <span>historico administrativo</span>
+  </button>
+</section>
+
+<section *ngIf="abaAtiva === 'operacionais'">
+  <section class="filters-card logs-filter-grid">
+    <div class="field grow">
+      <label>Busca</label>
+      <input type="text" placeholder="Buscar por servico, tipo, mensagem ou detalhe" [(ngModel)]="filtro" (keyup.enter)="aplicarFiltro()" />
+    </div>
+
+    <div class="field">
+      <label>Servico</label>
+      <select [(ngModel)]="servico" (change)="aplicarFiltro()">
+        <option value="">Todos</option>
+        <option value="geracao">Geracao</option>
+        <option value="exclusao">Exclusao</option>
+        <option value="pedidos">Pedidos</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Status</label>
+      <select [(ngModel)]="status" (change)="aplicarFiltro()">
+        <option value="">Todos</option>
+        <option value="SUCESSO">Sucesso</option>
+        <option value="ERRO">Erro</option>
+        <option value="ALERTA">Alerta</option>
+        <option value="INFO">Info</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Tipo</label>
+      <select [(ngModel)]="tipo" (change)="aplicarFiltro()">
+        <option value="">Todos</option>
+        <option value="INICIAR_SERVICO">Inicio de servico</option>
+        <option value="PARAR_SERVICO">Parada de servico</option>
+        <option value="CONSULTA_LOG">Consulta de log</option>
+        <option value="STREAM_LOG">Stream de log</option>
+        <option value="ERRO_LOG">Erro no log</option>
+        <option value="SERVICO_OFFLINE">Servico offline</option>
+        <option value="TENTATIVA_ENVIO_PEDIDO">Tentativa de pedido</option>
+        <option value="PEDIDO_INSERIDO">Pedido inserido</option>
+        <option value="ARQUIVO_GERADO">Arquivo gerado</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Inicio</label>
+      <input type="date" [(ngModel)]="dataInicio" (change)="aplicarFiltro()" />
+    </div>
+
+    <div class="field">
+      <label>Fim</label>
+      <input type="date" [(ngModel)]="dataFim" (change)="aplicarFiltro()" />
+    </div>
+
+    <div class="filter-actions">
+      <button class="btn-primary" type="button" (click)="aplicarFiltro()">Filtrar</button>
+      <button class="btn-secondary" type="button" (click)="limparFiltro()" *ngIf="temFiltroAtivo()">Limpar</button>
+    </div>
+  </section>
+
+  <div class="summary-line">
+    <span><strong>{{ totalRegistros }}</strong> eventos monitorados</span>
+    <span *ngIf="ultimaAtualizacao">Atualizado em {{ ultimaAtualizacao | date:'dd/MM/yyyy HH:mm:ss' }}</span>
   </div>
 
-  <div class="field">
-    <label>Serviço</label>
-    <select [(ngModel)]="servico" (change)="aplicarFiltro()">
-      <option value="">Todos</option>
-      <option value="geracao">Geração</option>
-      <option value="exclusao">Exclusão</option>
-      <option value="pedidos">Pedidos</option>
-    </select>
+  <div *ngIf="carregando" class="state-card">Carregando logs...</div>
+  <div *ngIf="!carregando && erro" class="state-card error">{{ erro }}</div>
+  <div *ngIf="!carregando && !erro && logs.length === 0" class="state-card">Nenhum log encontrado.</div>
+
+  <div class="timeline" *ngIf="!carregando && !erro && logs.length > 0">
+    <div class="event" *ngFor="let log of logs">
+      <div class="event-dot" [ngClass]="classeStatus(log.status)" [class.file]="log.tipo === 'ARQUIVO_GERADO'"></div>
+      <div class="event-card">
+        <div class="event-top">
+          <div class="event-badges">
+            <span class="badge" [ngClass]="classeStatus(log.status)">{{ log.status || 'INFO' }}</span>
+            <span class="badge neutral">{{ rotuloTipo(log.tipo) }}</span>
+          </div>
+          <strong>{{ log.data | date:'dd/MM/yyyy HH:mm:ss' }}</strong>
+        </div>
+
+        <p>{{ log.descricao }}</p>
+
+        <div class="event-meta">
+          <span><b>Servico</b>{{ rotuloServico(log) }}</span>
+          <span><b>Campanha</b>{{ log.campanha || '-' }}</span>
+          <span><b>Referencia</b>{{ log.referencia || '-' }}</span>
+          <span *ngIf="log.pid"><b>PID</b>{{ log.pid }}</span>
+          <span *ngIf="log.usuario"><b>Usuario</b>{{ log.usuario }}</span>
+        </div>
+
+        <pre *ngIf="detalheFormatado(log)">{{ detalheFormatado(log) }}</pre>
+      </div>
+    </div>
   </div>
 
-  <div class="field">
-    <label>Status</label>
-    <select [(ngModel)]="status" (change)="aplicarFiltro()">
-      <option value="">Todos</option>
-      <option value="SUCESSO">Sucesso</option>
-      <option value="ERRO">Erro</option>
-      <option value="ALERTA">Alerta</option>
-      <option value="INFO">Info</option>
-    </select>
-  </div>
-
-  <div class="field">
-    <label>Tipo</label>
-    <select [(ngModel)]="tipo" (change)="aplicarFiltro()">
-      <option value="">Todos</option>
-      <option value="INICIAR_SERVICO">Início de serviço</option>
-      <option value="PARAR_SERVICO">Parada de serviço</option>
-      <option value="CONSULTA_LOG">Consulta de log</option>
-      <option value="STREAM_LOG">Stream de log</option>
-      <option value="ERRO_LOG">Erro no log</option>
-      <option value="SERVICO_OFFLINE">Serviço offline</option>
-      <option value="TENTATIVA_ENVIO_PEDIDO">Tentativa de pedido</option>
-      <option value="PEDIDO_INSERIDO">Pedido inserido</option>
-      <option value="ARQUIVO_GERADO">Arquivo gerado</option>
-    </select>
-  </div>
-
-  <div class="field">
-    <label>Início</label>
-    <input type="date" [(ngModel)]="dataInicio" (change)="aplicarFiltro()" />
-  </div>
-
-  <div class="field">
-    <label>Fim</label>
-    <input type="date" [(ngModel)]="dataFim" (change)="aplicarFiltro()" />
-  </div>
-
-  <div class="filter-actions">
-    <button class="btn-primary" type="button" (click)="aplicarFiltro()">Filtrar</button>
-    <button class="btn-secondary" type="button" (click)="limparFiltro()" *ngIf="temFiltroAtivo()">Limpar</button>
+  <div class="pagination" *ngIf="!carregando && logs.length > 0">
+    <button type="button" class="btn-secondary" (click)="paginaAnterior()" [disabled]="paginaAtual === 1">Anterior</button>
+    <span>Pagina {{ paginaAtual }} de {{ totalPaginas }}</span>
+    <button type="button" class="btn-secondary" (click)="proximaPagina()" [disabled]="paginaAtual === totalPaginas">Proxima</button>
   </div>
 </section>
 
-<section class="api-log-card">
+<section class="api-log-card" *ngIf="abaAtiva === 'pedidos-api'">
   <div class="api-log-head">
     <div>
       <span class="eyebrow">API de pedidos</span>
       <h3>Erros e rastreios da integracao</h3>
-      <p>Consulta separada do arquivo gerado pela API de pedidos, sem mexer no terminal ao vivo dos servicos.</p>
+      <p>Consulta do arquivo gerado pela API de pedidos, agrupado separado dos eventos do painel.</p>
     </div>
     <button type="button" class="btn-primary" (click)="carregarLogErrosPedidos(true)" [disabled]="carregandoPedidosApi">
       {{ carregandoPedidosApi ? 'Consultando...' : 'Consultar log' }}
@@ -105,58 +168,165 @@
 
   <div *ngIf="carregandoPedidosApi" class="state-card compact">Carregando log da API...</div>
   <div *ngIf="!carregandoPedidosApi && erroPedidosApi" class="state-card compact error">{{ erroPedidosApi }}</div>
-  <div *ngIf="!carregandoPedidosApi && !erroPedidosApi && logsPedidosApi.length === 0" class="state-card compact">
-    Nenhum erro da API carregado.
-  </div>
+  <div *ngIf="!carregandoPedidosApi && !erroPedidosApi && logsPedidosApi.length === 0" class="state-card compact">Nenhum erro da API carregado.</div>
 
   <div class="api-log-terminal" *ngIf="!carregandoPedidosApi && !erroPedidosApi && logsPedidosApi.length > 0">
-    <div
-      class="api-log-line"
-      *ngFor="let linha of logsPedidosApi"
-      [class.error]="linhaPedidoApiErro(linha)"
-      [class.warn]="linhaPedidoApiAlerta(linha)"
-    >{{ linha }}</div>
+    <div class="api-log-line" *ngFor="let linha of logsPedidosApi" [class.error]="linhaPedidoApiErro(linha)" [class.warn]="linhaPedidoApiAlerta(linha)">{{ linha }}</div>
   </div>
 </section>
 
-<div class="summary-line">
-  <span><strong>{{ totalRegistros }}</strong> eventos monitorados</span>
-  <span *ngIf="ultimaAtualizacao">Atualizado em {{ ultimaAtualizacao | date:'dd/MM/yyyy HH:mm:ss' }}</span>
-</div>
-
-<div *ngIf="carregando" class="state-card">Carregando logs...</div>
-<div *ngIf="!carregando && erro" class="state-card error">{{ erro }}</div>
-<div *ngIf="!carregando && !erro && logs.length === 0" class="state-card">Nenhum log encontrado.</div>
-
-<div class="timeline" *ngIf="!carregando && !erro && logs.length > 0">
-  <div class="event" *ngFor="let log of logs">
-    <div class="event-dot" [ngClass]="classeStatus(log.status)" [class.file]="log.tipo === 'ARQUIVO_GERADO'"></div>
-    <div class="event-card">
-      <div class="event-top">
-        <div class="event-badges">
-          <span class="badge" [ngClass]="classeStatus(log.status)">{{ log.status || 'INFO' }}</span>
-          <span class="badge neutral">{{ rotuloTipo(log.tipo) }}</span>
-        </div>
-        <strong>{{ log.data | date:'dd/MM/yyyy HH:mm:ss' }}</strong>
-      </div>
-
-      <p>{{ log.descricao }}</p>
-
-      <div class="event-meta">
-        <span><b>Serviço</b>{{ rotuloServico(log) }}</span>
-        <span><b>Campanha</b>{{ log.campanha || '-' }}</span>
-        <span><b>Referência</b>{{ log.referencia || '-' }}</span>
-        <span *ngIf="log.pid"><b>PID</b>{{ log.pid }}</span>
-        <span *ngIf="log.usuario"><b>Usuário</b>{{ log.usuario }}</span>
-      </div>
-
-      <pre *ngIf="detalheFormatado(log)">{{ detalheFormatado(log) }}</pre>
+<section class="cron-log-card" *ngIf="abaAtiva === 'cron'">
+  <div class="api-log-head">
+    <div>
+      <span class="eyebrow">Crontab</span>
+      <h3>Logs das rotinas agendadas</h3>
+      <p>Saida dos jobs de geracao e exclusao, sem editor do crontab nesta tela.</p>
+    </div>
+    <div class="log-actions">
+      <select [(ngModel)]="linhasLogCron" (change)="carregarLogsCron(true)">
+        <option [ngValue]="100">100 linhas</option>
+        <option [ngValue]="200">200 linhas</option>
+        <option [ngValue]="500">500 linhas</option>
+      </select>
+      <button class="btn-primary" type="button" (click)="carregarLogsCron(true)" [disabled]="carregandoLogsCron">
+        {{ carregandoLogsCron ? 'Atualizando...' : 'Atualizar logs' }}
+      </button>
     </div>
   </div>
-</div>
 
-<div class="pagination" *ngIf="!carregando && logs.length > 0">
-  <button type="button" class="btn-secondary" (click)="paginaAnterior()" [disabled]="paginaAtual === 1">Anterior</button>
-  <span>Página {{ paginaAtual }} de {{ totalPaginas }}</span>
-  <button type="button" class="btn-secondary" (click)="proximaPagina()" [disabled]="paginaAtual === totalPaginas">Próxima</button>
-</div>
+  <div *ngIf="carregandoLogsCron" class="state-card">Carregando logs do crontab...</div>
+  <div *ngIf="!carregandoLogsCron && erroLogsCron" class="state-card error">{{ erroLogsCron }}</div>
+  <div *ngIf="!carregandoLogsCron && !erroLogsCron && logsCron.length === 0" class="state-card">Nenhum log carregado.</div>
+
+  <div class="log-diagnostics" *ngIf="!carregandoLogsCron && !erroLogsCron && logsCron.length > 0">
+    <article *ngFor="let item of logsCron">
+      <div class="log-title">
+        <strong>{{ item.nome }}</strong>
+        <span [class.ok]="item.arquivo?.existe && !item.resumo?.erros">{{ statusResumoCron(item) }}</span>
+      </div>
+
+      <small>Script: {{ item.script }} - Arquivo: {{ item.arquivo?.path || '-' }} - Origem: {{ item.arquivo?.source || '-' }}</small>
+
+      <div class="log-summary">
+        <div><b>{{ item.resumo?.arquivos || 0 }}</b><small>arquivos</small></div>
+        <div><b>{{ item.resumo?.pedidos || 0 }}</b><small>pedidos</small></div>
+        <div><b>{{ item.resumo?.campanhas || 0 }}</b><small>campanhas</small></div>
+        <div><b>{{ item.resumo?.erros || 0 }}</b><small>erros</small></div>
+      </div>
+
+      <div class="events-list" *ngIf="eventosLogCron(item).length; else semEventosCron">
+        <div class="event-row" *ngFor="let evento of eventosLogCron(item)">
+          <span [class.error]="evento.status === 'ERRO'" [class.warn]="evento.status === 'ALERTA'">{{ evento.tipo }}</span>
+          <p>{{ evento.mensagem }}</p>
+          <small *ngIf="evento.detalhe">{{ evento.detalhe }}</small>
+        </div>
+      </div>
+
+      <ng-template #semEventosCron>
+        <div class="state-card small">Nenhum evento operacional reconhecido. O log completo continua disponivel abaixo.</div>
+      </ng-template>
+
+      <div class="actions log-toggle">
+        <button class="btn-secondary" type="button" (click)="alternarLogCronCompleto(item.chave)">
+          {{ logsCompletosAbertos[item.chave] ? 'Ocultar log completo' : 'Visualizar log completo' }}
+        </button>
+      </div>
+
+      <pre class="cron-log-output" *ngIf="logsCompletosAbertos[item.chave]">{{ resumoLogCron(item) }}</pre>
+    </article>
+  </div>
+</section>
+
+<section class="audit-page" *ngIf="abaAtiva === 'auditoria'">
+  <section class="filters-card">
+    <div class="filters-head">
+      <div>
+        <span class="eyebrow">Filtros</span>
+        <strong>{{ filtrosAuditoriaAtivos() }} ativo{{ filtrosAuditoriaAtivos() === 1 ? '' : 's' }}</strong>
+      </div>
+      <button class="btn-secondary small" type="button" (click)="limparFiltroAuditoria()" [disabled]="carregandoAuditoria">Limpar</button>
+    </div>
+
+    <div class="filters-grid audit-filters-grid">
+      <div class="field">
+        <label>Acao</label>
+        <select [(ngModel)]="filtroAcaoAuditoria">
+          <option value="">Todas</option>
+          <option value="INICIAR_SERVICO">Iniciar servico</option>
+          <option value="PARAR_SERVICO">Parar servico</option>
+          <option value="SALVAR_CRON">Salvar crontab</option>
+          <option value="EDITAR_SCRIPT_SERVICO">Editar script</option>
+          <option value="EXCLUIR_ARQUIVO">Excluir arquivo</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Status</label>
+        <select [(ngModel)]="filtroStatusAuditoria">
+          <option value="">Todos</option>
+          <option value="SUCESSO">Sucesso</option>
+          <option value="ERRO">Erro</option>
+        </select>
+      </div>
+
+      <div class="field small-field">
+        <label>Limite</label>
+        <select [(ngModel)]="limiteAuditoria">
+          <option [ngValue]="25">25</option>
+          <option [ngValue]="50">50</option>
+          <option [ngValue]="100">100</option>
+          <option [ngValue]="200">200</option>
+        </select>
+      </div>
+
+      <div class="filter-actions">
+        <button class="btn-primary" type="button" (click)="aplicarFiltroAuditoria()" [disabled]="carregandoAuditoria">Filtrar</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="audit-list">
+    <div class="list-head">
+      <div>
+        <span class="eyebrow">Acoes do painel</span>
+        <strong><b>{{ acoesPainel.length }}</b> acoes exibidas</strong>
+      </div>
+      <span class="loading-pill" *ngIf="carregandoAuditoria && acoesPainel.length">Atualizando dados...</span>
+      <span class="loading-pill" *ngIf="ultimaAtualizacaoAuditoria">Atualizado {{ ultimaAtualizacaoAuditoria | date:'HH:mm:ss' }}</span>
+    </div>
+
+    <div *ngIf="carregandoAuditoria && !acoesPainel.length" class="state-card">Carregando acoes...</div>
+    <div *ngIf="!carregandoAuditoria && erroAuditoria" class="state-card error">{{ erroAuditoria }}</div>
+    <div *ngIf="!carregandoAuditoria && !erroAuditoria && acoesPainel.length === 0" class="state-card">Nenhuma acao encontrada.</div>
+
+    <div class="table-card" *ngIf="!erroAuditoria && acoesPainel.length > 0">
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Usuario</th>
+            <th>Acao</th>
+            <th>Alvo</th>
+            <th>Status</th>
+            <th>Mensagem</th>
+            <th>IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of acoesPainel; trackBy: trackAcao">
+            <td class="date-col">{{ item.criado_em | date:'dd/MM/yyyy HH:mm:ss' }}</td>
+            <td>{{ item.usuario || '-' }}</td>
+            <td><span class="badge neutral">{{ item.acao }}</span></td>
+            <td>{{ item.alvo || '-' }}</td>
+            <td><span class="badge" [class.good]="item.status === 'SUCESSO'" [class.bad]="item.status === 'ERRO'">{{ item.status }}</span></td>
+            <td class="message-col">
+              <strong>{{ item.mensagem || '-' }}</strong>
+              <small *ngIf="item.detalheFormatado && item.detalheFormatado !== '-'">{{ item.detalheFormatado }}</small>
+            </td>
+            <td>{{ item.ip || '-' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</section>

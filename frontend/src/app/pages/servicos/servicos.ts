@@ -1,7 +1,7 @@
-import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
+import { AfterViewChecked, ChangeDetectorRef, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { IntegracaoService, ServicoStatus } from '../../services/service';
 
-type LogMode = 'ultimo' | 'aovivo' | 'pausado';
+type LogMode = 'aovivo';
 
 interface LogCacheItem {
   logs: string[];
@@ -15,7 +15,8 @@ interface LogCacheItem {
   templateUrl: './servicos.html',
   styleUrls: ['./servicos.scss']
 })
-export class ServicosComponent implements OnInit, OnDestroy {
+export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
+  @ViewChild('terminalRef') terminalRef?: ElementRef<HTMLElement>;
   private readonly cacheKeyServicos = 'sig_integracao_servicos_cache';
   private readonly cacheKeyLogs = 'sig_integracao_servicos_logs_cache';
   private readonly logCacheTtlMs = 60000;
@@ -27,13 +28,26 @@ export class ServicosComponent implements OnInit, OnDestroy {
   carregando = false;
   carregandoLogs = false;
   erro = '';
-  modoLog: LogMode = 'ultimo';
+  modoLog: LogMode = 'aovivo';
   terminalAberto = false;
+  filtroLogTexto = '';
+  filtroLogDias: number | null = null;
   ultimaAtualizacao: Date | null = null;
   ultimaAtualizacaoLog: Date | null = null;
   executionIds: Record<string, string> = {};
+  editorAberto = false;
+  editorCarregando = false;
+  editorSalvando = false;
+  editorServico: ServicoStatus | null = null;
+  editorConteudo = '';
+  editorErro = '';
+  editorMeta: any = null;
+  editorTipo: 'script' | 'cron' = 'script';
+  arquivosGeradosModalAberto = false;
   private timer?: number;
   private logsStream?: EventSource;
+  private deveRolarTerminal = false;
+  private seguirTerminal = false;
 
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
 
@@ -47,6 +61,13 @@ export class ServicosComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.timer) window.clearInterval(this.timer);
     this.fecharStreamLogs();
+  }
+
+  ngAfterViewChecked(): void {
+    if (!this.deveRolarTerminal) return;
+
+    this.deveRolarTerminal = false;
+    this.rolarTerminalParaBaixo();
   }
 
   private normalizarServicos(data: any): ServicoStatus[] {
@@ -73,6 +94,7 @@ export class ServicosComponent implements OnInit, OnDestroy {
       porta: item.porta,
       servidor: item.servidor,
       online: !!item.online,
+      statusOperacional: item.statusOperacional || null,
       pids: Array.isArray(item.pids) ? item.pids : [],
       emExecucaoPainel: !!(item.emExecucaoPainel || item.rodandoPainel || item.pidPainel),
       pidPainel: item.pidPainel || null,
@@ -80,6 +102,14 @@ export class ServicosComponent implements OnInit, OnDestroy {
       jar: item.jar || item.jarPath || null,
     };
   }
+  private marcarServicoIniciando(chave: string): void {
+    this.servicos = this.servicos.map((item) => item.chave === chave
+      ? { ...item, online: false, statusOperacional: 'iniciando', emExecucaoPainel: true }
+      : item);
+    this.ultimaAtualizacao = new Date();
+    this.cdr.detectChanges();
+  }
+
 
   nomePadrao(chave: string): string {
     if (chave === 'geracao') return 'Geração de arquivos';
@@ -121,11 +151,13 @@ export class ServicosComponent implements OnInit, OnDestroy {
         this.servicoLogSelecionado = servico;
         this.executionIds[servico] = res?.data?.executionId || '';
         this.terminalAberto = true;
+        this.marcarServicoIniciando(servico);
         this.limparTerminal(false);
         this.carregando = false;
-        this.carregar(true, true);
         this.carregarDiagnosticoLogs(false);
         this.ativarAoVivo(true);
+        window.setTimeout(() => this.carregar(false, true), 8000);
+        window.setTimeout(() => this.carregar(false, true), 20000);
       },
       error: (err) => {
         this.erro = err?.error?.message || 'Erro ao iniciar serviço.';
@@ -157,24 +189,22 @@ export class ServicosComponent implements OnInit, OnDestroy {
   selecionarLog(chave: string): void {
     this.servicoLogSelecionado = chave;
     this.terminalAberto = true;
-    this.modoLog = 'ultimo';
-    this.fecharStreamLogs();
-
-    const temCacheValido = this.restaurarCacheLocalLogs(true);
-    this.carregarLogs(!temCacheValido, !temCacheValido);
+    this.modoLog = 'aovivo';
+    this.restaurarCacheLocalLogs(false);
+    this.ativarAoVivo(true);
   }
 
   carregarLogs(mostrarErro = true, force = false): void {
     if (!this.servicoLogSelecionado) return;
 
-    if (!force && this.restaurarCacheLocalLogs(true)) {
+    if (!this.filtrosLogAtivos() && !force && this.restaurarCacheLocalLogs(true)) {
       this.carregandoLogs = false;
       return;
     }
 
     this.carregandoLogs = true;
 
-    this.service.getLogsServico(this.servicoLogSelecionado, 300, force, this.executionIdAtual()).subscribe({
+    this.service.getLogsServico(this.servicoLogSelecionado, 300, force, this.executionIdAtual(), this.filtrosLog()).subscribe({
       next: (res: any) => {
         const data = res.data;
         this.logs = Array.isArray(data) ? data.filter(Boolean) : String(res.content || '').split('\n').filter(Boolean);
@@ -183,8 +213,11 @@ export class ServicosComponent implements OnInit, OnDestroy {
           this.executionIds[this.servicoLogSelecionado] = this.logMeta.executionId;
         }
         this.ultimaAtualizacaoLog = new Date();
-        this.salvarCacheLocalLogs();
+        if (!this.filtrosLogAtivos()) {
+          this.salvarCacheLocalLogs();
+        }
         this.carregandoLogs = false;
+        this.agendarRolagemTerminal();
         this.cdr.detectChanges();
       },
       error: (err) => {
@@ -196,10 +229,23 @@ export class ServicosComponent implements OnInit, OnDestroy {
   }
 
   atualizarLog(): void {
+    this.filtroLogTexto = '';
+    this.filtroLogDias = null;
+    this.ativarAoVivo(true);
+  }
+
+  aplicarFiltroLog(): void {
+    if (!this.servicoLogSelecionado) return;
+
     this.terminalAberto = true;
     this.fecharStreamLogs();
-    this.modoLog = 'ultimo';
     this.carregarLogs(true, true);
+  }
+
+  limparFiltroLog(): void {
+    this.filtroLogTexto = '';
+    this.filtroLogDias = null;
+    this.ativarAoVivo(true);
   }
 
   ativarAoVivo(ignorarCache = false): void {
@@ -213,11 +259,6 @@ export class ServicosComponent implements OnInit, OnDestroy {
     this.conectarStreamLogs();
   }
 
-  pausarLog(): void {
-    this.fecharStreamLogs();
-    this.modoLog = 'pausado';
-    this.carregandoLogs = false;
-  }
 
   limparTerminal(salvar = true): void {
     this.logs = [];
@@ -241,6 +282,169 @@ export class ServicosComponent implements OnInit, OnDestroy {
     });
   }
 
+  abrirEditorCrontab(): void {
+    this.editorTipo = 'cron';
+    this.editorAberto = true;
+    this.editorCarregando = true;
+    this.editorSalvando = false;
+    this.editorServico = null;
+    this.editorConteudo = '';
+    this.editorErro = '';
+    this.editorMeta = { script: 'crontab', path: 'Crontab do servidor' };
+
+    this.service.getCron().subscribe({
+      next: (res: any) => {
+        const data = res.data || {};
+        this.editorConteudo = data.crontab || data.content || '';
+        this.editorMeta = {
+          script: 'crontab',
+          path: 'Crontab do servidor',
+          workdir: data.servidor || 'servidor da integracao',
+          escritaLiberada: !!data.escritaLiberada
+        };
+        this.editorCarregando = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.editorErro = this.mensagemErroEditor(err, 'Erro ao carregar crontab.');
+        this.editorCarregando = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  abrirEditorScript(item: ServicoStatus): void {
+    if (!item.script) return;
+
+    this.editorAberto = true;
+    this.editorCarregando = true;
+    this.editorSalvando = false;
+    this.editorServico = item;
+    this.editorConteudo = '';
+    this.editorErro = '';
+    this.editorMeta = null;
+
+    this.service.getScriptServico(item.chave).subscribe({
+      next: (res: any) => {
+        const data = res.data || {};
+        this.editorConteudo = data.content || '';
+        this.editorMeta = data;
+        this.editorCarregando = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.editorErro = this.mensagemErroEditor(err, 'Erro ao carregar script.');
+        this.editorCarregando = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  fecharEditorScript(): void {
+    this.editorAberto = false;
+    this.editorCarregando = false;
+    this.editorSalvando = false;
+    this.editorServico = null;
+    this.editorConteudo = '';
+    this.editorErro = '';
+    this.editorMeta = null;
+    this.editorTipo = 'script';
+  }
+
+  salvarEditorScript(): void {
+    if (this.editorSalvando) return;
+
+    if (this.editorTipo === 'cron') {
+      this.salvarEditorCrontab();
+      return;
+    }
+
+    if (!this.editorServico) return;
+
+    this.editorSalvando = true;
+    this.editorErro = '';
+
+    this.service.salvarScriptServico(this.editorServico.chave, this.editorConteudo).subscribe({
+      next: (res: any) => {
+        this.editorMeta = res.data || this.editorMeta;
+        this.editorSalvando = false;
+        this.fecharEditorScript();
+        this.carregar(true, true);
+      },
+      error: (err) => {
+        this.editorErro = this.mensagemErroEditor(err, 'Erro ao salvar script.');
+        this.editorSalvando = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private salvarEditorCrontab(): void {
+    this.editorSalvando = true;
+    this.editorErro = '';
+
+    this.service.salvarCron(this.editorConteudo).subscribe({
+      next: (res: any) => {
+        this.editorMeta = res.data || this.editorMeta;
+        this.editorSalvando = false;
+        this.fecharEditorScript();
+        this.carregarDiagnosticoLogs(false);
+      },
+      error: (err) => {
+        this.editorErro = this.mensagemErroEditor(err, 'Erro ao salvar crontab.');
+        this.editorSalvando = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  arquivosGerados(): string[] {
+    const encontrados = new Set<string>();
+    const olsProcessadas = new Set<string>();
+    let houveGeracao = false;
+
+    for (const linha of this.logs) {
+      const texto = String(linha || '');
+      const matches = texto.match(/[A-Za-z0-9_.-]+\.json\b/gi) || [];
+      matches.forEach((arquivo) => encontrados.add(arquivo.split('/').pop() || arquivo));
+
+      const olMatch = texto.match(/(?:FIM PROCESSAMENTO OL|Concluindo OL|INICIO PROCESSAMENTO OL(?: MULTI-REDE)?|An[a�]lise OL)\s*:?\s*(\d+)/i);
+      if (olMatch?.[1]) {
+        olsProcessadas.add(olMatch[1]);
+      }
+
+      if (/(Status:\s*GERAD|Finalizado|upload GCS)/i.test(texto)) {
+        houveGeracao = true;
+      }
+    }
+
+    if (!encontrados.size && houveGeracao) {
+      olsProcessadas.forEach((ol) => encontrados.add(`${ol}.json`));
+    }
+
+    return Array.from(encontrados).sort();
+  }
+
+  abrirArquivosGerados(): void {
+    this.arquivosGeradosModalAberto = true;
+    this.cdr.detectChanges();
+  }
+
+  fecharArquivosGerados(): void {
+    this.arquivosGeradosModalAberto = false;
+    this.cdr.detectChanges();
+  }
+
+  abrirArquivoGerado(arquivo: string): void {
+    window.location.href = `/arquivos?search=${encodeURIComponent(arquivo)}`;
+  }
+
+  acompanharTerminal(): void {
+    this.seguirTerminal = true;
+    this.agendarRolagemTerminal();
+    this.cdr.detectChanges();
+  }
+
   diagnosticoLogSelecionado(): any {
     return this.diagnosticoLogs.find((item) => item.chave === this.servicoLogSelecionado) || null;
   }
@@ -257,27 +461,30 @@ export class ServicosComponent implements OnInit, OnDestroy {
       || diagnostico.arquivos[0];
   }
 
+  filtrosLogAtivos(): boolean {
+    return Boolean(String(this.filtroLogTexto || '').trim() || Number(this.filtroLogDias || 0) > 0);
+  }
+
+  filtrosLog(): { dias?: number | null; search?: string | null } {
+    const dias = Math.min(Math.max(Number(this.filtroLogDias || 0), 0), 30);
+
+    return {
+      dias: dias > 0 ? dias : null,
+      search: String(this.filtroLogTexto || '').trim() || null,
+    };
+  }
+
   resumoOperacional(): any {
     const linhas = this.logs.filter(Boolean);
     const inicio = linhas.find((linha) => /(SIG_PANEL_START|iniciando|inicio|início|starting|INICIO PROCESSAMENTO)/i.test(linha || ''));
     const finalizacao = [...linhas].reverse().find((linha) => /(finalizado|finalizada|concluido|concluído|started .* in|FIM PROCESSAMENTO)/i.test(linha || ''));
     const fila = linhas.find((linha) => /Nenhuma OL na fila/i.test(linha || ''));
-    const quantidadeOls = this.extrairValorResumo(/Quantidade de OLS:\s*(\d+)/i);
-    const olsUnicas = this.extrairValorResumo(/OLS unicas.*?:\s*(\d+)/i);
-    const registrosBrutos = this.extrairValorResumo(/total registros brutos:\s*(\d+)/i);
-    const arquivos = linhas.filter((linha) => /\.json\b/i.test(linha || '') && /(arquivo|gerad|bucket|disponivel|disponível)/i.test(linha || '')).length;
-    const erros = this.resumoErros();
     const ultimoEvento = [...linhas].reverse().find((linha) => !this.linhaRuidoResumo(linha));
 
     return {
       inicio: this.formatarInicioResumo(inicio),
       finalizacao: finalizacao || fila || '-',
-      quantidadeOls: quantidadeOls ?? '-',
-      olsUnicas: olsUnicas ?? '-',
-      registrosBrutos: registrosBrutos ?? '-',
-      arquivos,
-      erros,
-      status: erros ? 'Verificar erros' : (fila ? 'Sem OL na fila' : 'Operacional'),
+      arquivos: this.arquivosGerados().length,
       ultimoEvento: ultimoEvento || '-',
     };
   }
@@ -343,13 +550,14 @@ export class ServicosComponent implements OnInit, OnDestroy {
 
       stream.onmessage = (event) => {
         const payload = JSON.parse(event.data || '{}');
+        let alterouLogs = false;
 
         if (Array.isArray(payload.linhas)) {
-          this.logs = payload.linhas.filter(Boolean);
-        }
-
-        if (Array.isArray(payload.novasLinhas) && payload.novasLinhas.length) {
+          this.logs = payload.linhas.filter(Boolean).slice(-500);
+          alterouLogs = true;
+        } else if (Array.isArray(payload.novasLinhas) && payload.novasLinhas.length) {
           this.logs = [...this.logs, ...payload.novasLinhas.filter(Boolean)].slice(-500);
+          alterouLogs = true;
         }
 
         if (payload.meta) {
@@ -360,16 +568,16 @@ export class ServicosComponent implements OnInit, OnDestroy {
         }
 
         this.ultimaAtualizacaoLog = new Date();
-        this.salvarCacheLocalLogs();
+        if (!this.filtrosLogAtivos()) {
+          this.salvarCacheLocalLogs();
+        }
         this.carregandoLogs = false;
+        if (alterouLogs && this.seguirTerminal) this.agendarRolagemTerminal();
         this.cdr.detectChanges();
       };
 
       stream.onerror = () => {
         this.fecharStreamLogs();
-        if (this.modoLog === 'aovivo') {
-          this.modoLog = 'pausado';
-        }
         this.carregarLogs(false);
       };
     } catch {
@@ -382,6 +590,25 @@ export class ServicosComponent implements OnInit, OnDestroy {
       this.logsStream.close();
       this.logsStream = undefined;
     }
+  }
+
+  private agendarRolagemTerminal(): void {
+    this.deveRolarTerminal = true;
+  }
+
+  private rolarTerminalParaBaixo(): void {
+    const el = this.terminalRef?.nativeElement;
+    if (!el) return;
+
+    window.requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+      el.scrollIntoView({ block: 'end', behavior: 'smooth' });
+    });
+  }
+
+  private mensagemErroEditor(err: any, fallback: string): string {
+    const detalhe = err?.error?.error || err?.error?.message || err?.message || '';
+    return detalhe ? `${fallback} ${detalhe}` : fallback;
   }
 
   private restaurarCacheLocal(): void {

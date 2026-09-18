@@ -111,6 +111,22 @@ export class PedidosComponent implements OnInit {
   paginaAnterior(): void { if (this.paginaAtual > 1) { this.paginaAtual--; this.carregar(); } }
   proximaPagina(): void { if (this.paginaAtual < this.totalPaginas) { this.paginaAtual++; this.carregar(); } }
 
+  formatarDataPedido(item: any): string {
+    const valor = item?.dataPedidoFormatada || item?.dataPedido;
+    if (!valor) return '-';
+
+    const texto = String(valor);
+    const match = texto.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::\d{2})?)?/);
+
+    if (match) {
+      return `${match[3]}/${match[2]}/${match[1]} ${match[4] || '00'}:${match[5] || '00'}`;
+    }
+
+    const data = new Date(valor);
+    if (Number.isNaN(data.getTime())) return texto;
+
+    return `${data.toLocaleDateString('pt-BR')} ${data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+  }
   private cacheId(): string {
     return JSON.stringify({
       page: this.paginaAtual,

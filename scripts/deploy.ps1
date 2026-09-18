@@ -22,6 +22,19 @@ function Require-Command {
   }
 }
 
+function Invoke-Native {
+  param(
+    [string]$FilePath,
+    [string[]]$Arguments = @()
+  )
+
+  & $FilePath @Arguments
+
+  if ($LASTEXITCODE -ne 0) {
+    throw "Comando falhou ($LASTEXITCODE): $FilePath $($Arguments -join ' ')"
+  }
+}
+
 function Copy-DirectoryContent {
   param(
     [string]$Source,
@@ -74,7 +87,7 @@ if (-not $SkipBuild) {
   Write-Step "Build do frontend"
   Push-Location $FrontendSource
   try {
-    npm run build
+    Invoke-Native "npm" @("run", "build")
   } finally {
     Pop-Location
   }
@@ -102,7 +115,7 @@ Copy-DirectoryContent `
 Write-Step "Compactando backend"
 Push-Location $BackendStage
 try {
-  tar -czf $BackendArchive .
+  Invoke-Native "tar" @("-czf", $BackendArchive, ".")
 } finally {
   Pop-Location
 }
@@ -110,15 +123,15 @@ try {
 Write-Step "Compactando frontend"
 Push-Location $FrontendStage
 try {
-  tar -czf $FrontendArchive .
+  Invoke-Native "tar" @("-czf", $FrontendArchive, ".")
 } finally {
   Pop-Location
 }
 
 Write-Step "Enviando pacotes para o servidor"
-ssh $SshHost "mkdir -p '$RemoteTmp'"
-scp $BackendArchive "${SshHost}:$RemoteTmp/backend.tar.gz"
-scp $FrontendArchive "${SshHost}:$RemoteTmp/frontend.tar.gz"
+Invoke-Native "ssh" @($SshHost, "mkdir -p '$RemoteTmp'")
+Invoke-Native "scp" @($BackendArchive, "${SshHost}:$RemoteTmp/backend.tar.gz")
+Invoke-Native "scp" @($FrontendArchive, "${SshHost}:$RemoteTmp/frontend.tar.gz")
 
 $RemoteScript = @"
 set -e
@@ -174,8 +187,8 @@ $RemoteScriptPath = Join-Path $Stage "remote-deploy.sh"
 Set-Content -LiteralPath $RemoteScriptPath -Value $RemoteScript -Encoding UTF8
 
 Write-Step "Executando deploy remoto"
-scp $RemoteScriptPath "${SshHost}:$RemoteTmp/remote-deploy.sh"
-ssh $SshHost "bash '$RemoteTmp/remote-deploy.sh'"
+Invoke-Native "scp" @($RemoteScriptPath, "${SshHost}:$RemoteTmp/remote-deploy.sh")
+Invoke-Native "ssh" @($SshHost, "bash '$RemoteTmp/remote-deploy.sh'")
 
 Write-Step "Concluido"
 Write-Host "Deploy finalizado com sucesso." -ForegroundColor Green

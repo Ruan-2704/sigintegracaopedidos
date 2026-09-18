@@ -40,6 +40,8 @@ const {
   listarPidsPorPorta,
   listarPidsPorNome,
   matarPidsPorPorta,
+  lerArquivoScript,
+  salvarArquivoScript,
   lerLogRemoto,
   lerLogErrosPedidos,
   diagnosticarLogsCrontab,
@@ -276,6 +278,17 @@ function houveAcaoManualRecente(chave) {
   return Boolean(ts && Date.now() - ts < IGNORAR_ALERTA_APOS_STOP_MS);
 }
 
+function erroSshTransitorio(error) {
+  const mensagem = String(error?.message || '').toLowerCase();
+  return mensagem.includes('excedeu')
+    || mensagem.includes('econnreset')
+    || mensagem.includes('timed out')
+    || mensagem.includes('timeout');
+}
+
+function debugStatusSshAtivo() {
+  return String(process.env.DEBUG_SSH_STATUS || 'false').toLowerCase() === 'true';
+}
 async function safePidsServico(chave) {
   const servico = SERVICOS[chave];
 
@@ -310,7 +323,9 @@ async function safePidsServico(chave) {
 
     return Array.isArray(pids) ? pids : [];
   } catch (error) {
-    console.error(`Erro ao listar PIDs do serviço ${chave}:`, error.message);
+    if (!erroSshTransitorio(error) || debugStatusSshAtivo()) {
+      console.warn(`Status do serviço ${chave} indisponível:`, error.message);
+    }
     return [];
   }
 }
@@ -1315,14 +1330,105 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
   }
 });
 
+app.get('/servicos/:servico/script', authMiddleware, async (req, res) => {
+  try {
+    const chave = req.params.servico;
+    const servico = SERVICOS[chave];
+
+    if (!servico) {
+      return erroResponse(res, 400, 'Servico invalido.');
+    }
+
+    if (!servico.script) {
+      return erroResponse(res, 400, 'Servico sem script editavel.');
+    }
+
+    const target = alvoServico(chave);
+    const data = await lerArquivoScript(servico.script, target);
+
+    return res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    return erroResponse(res, 500, 'Erro ao ler script do servico', error);
+  }
+});
+
+app.post('/servicos/:servico/script', authMiddleware, async (req, res) => {
+  try {
+    const chave = req.params.servico;
+    const servico = SERVICOS[chave];
+    const content = String(req.body?.content ?? '');
+
+    if (!servico) {
+      return erroResponse(res, 400, 'Servico invalido.');
+    }
+
+    if (!servico.script) {
+      return erroResponse(res, 400, 'Servico sem script editavel.');
+    }
+
+    if (!content.trim()) {
+      return erroResponse(res, 400, 'Conteudo do script nao pode ficar vazio.');
+    }
+
+    const target = alvoServico(chave);
+    const data = await salvarArquivoScript(servico.script, content, target);
+
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'EDITAR_SCRIPT_SERVICO',
+      alvo: chave,
+      mensagem: `Script do servico ${chave} atualizado pelo painel.`,
+      detalhe: {
+        script: servico.script,
+        path: data.path,
+        backupPath: data.backupPath,
+        target,
+      },
+    });
+    registrarServicoLogSeguro(eventoServicoPayload(chave, {
+      req,
+      tipo: 'EDITAR_SCRIPT',
+      status: 'SUCESSO',
+      mensagem: `Script ${servico.script} atualizado pelo painel.`,
+      detalhe: {
+        path: data.path,
+        backupPath: data.backupPath,
+        target,
+      },
+    }));
+
+    return res.json({
+      success: true,
+      message: 'Script salvo com sucesso.',
+      data,
+    });
+  } catch (error) {
+    registrarAcaoPainelSeguro({
+      req,
+      acao: 'EDITAR_SCRIPT_SERVICO',
+      alvo: req.params.servico,
+      status: 'ERRO',
+      mensagem: 'Erro ao salvar script do servico.',
+      detalhe: error.stack || error.message,
+    });
+
+    return erroResponse(res, 500, 'Erro ao salvar script do servico', error);
+  }
+});
+
 app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
   try {
     const servico = req.params.servico;
     const limit = Number(req.query.limit || req.query.linhas || 300);
     const force = String(req.query.force || 'false') === 'true';
+    const dias = Math.min(Math.max(Number(req.query.dias || 0), 0), 30);
+    const search = String(req.query.search || req.query.q || '').trim();
     const contextoExecucao = contextoLogServico(req, servico);
     const executionId = contextoExecucao?.executionId || 'ultimo';
-    const cacheKey = `${servico}:${limit}:${executionId}`;
+    const cacheKey = `${servico}:${limit}:${executionId}:${dias}:${search}`;
     const cache = logsServicosCache[cacheKey];
 
     let scriptName;
@@ -1370,11 +1476,17 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
           marker: contextoExecucao?.marker || null,
           logPath: contextoExecucao?.logPath || null,
           logSource: contextoExecucao?.logSource || null,
+          dias,
+          search: search || null,
         },
       });
     }
 
-    const content = await lerLogRemoto(scriptName, limit, target, contextoExecucao || {});
+    const content = await lerLogRemoto(scriptName, limit, target, {
+      ...(contextoExecucao || {}),
+      dias,
+      search,
+    });
     registrarServicoLogSeguro(eventoServicoPayload(servico, {
       req,
       tipo: 'CONSULTA_LOG',
@@ -1405,6 +1517,8 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
         marker: contextoExecucao?.marker || null,
         logPath: contextoExecucao?.logPath || null,
         logSource: contextoExecucao?.logSource || null,
+        dias,
+        search: search || null,
       },
     });
   } catch (error) {
@@ -1611,7 +1725,7 @@ app.get('/servicos/:servico/logs/stream', async (req, res) => {
         mensagem: error.message,
       });
     });
-  }, Number(process.env.LOG_STREAM_INTERVAL_MS || 3500));
+  }, Number(process.env.LOG_STREAM_INTERVAL_MS || 1200));
 
   req.on('close', () => {
     fechado = true;
@@ -1657,7 +1771,9 @@ app.get('/cron/logs', authMiddleware, async (req, res) => {
   try {
     const linhas = Number(req.query.linhas || req.query.limit || 200);
     const force = String(req.query.force || 'false') === 'true';
-    const cacheKey = `cron:${linhas}`;
+    const dias = Math.min(Math.max(Number(req.query.dias || 0), 0), 30);
+    const search = String(req.query.search || req.query.q || '').trim();
+    const cacheKey = `cron:${linhas}:${dias}:${search}`;
     const cache = logsCronCache[cacheKey];
     const agora = Date.now();
 
@@ -1673,7 +1789,7 @@ app.get('/cron/logs', authMiddleware, async (req, res) => {
       });
     }
 
-    const data = await lerLogsCrontab(SERVICOS, linhas);
+    const data = await lerLogsCrontab(SERVICOS, linhas, { dias, search });
     logsCronCache[cacheKey] = {
       data,
       updatedAt: Date.now(),
@@ -2209,7 +2325,7 @@ app.get('/pedidos', async (req, res) => {
 
     const [rows] = await queryComTimeout(
       `
-        SELECT codigo, numeroCarrinhoDeCompras, CnpjDistribuidor, CnpjCliente, IdCampanha, NomeCampanha, pedidoIntegradora, integradora, dataPedido
+        SELECT codigo, numeroCarrinhoDeCompras, CnpjDistribuidor, CnpjCliente, IdCampanha, NomeCampanha, pedidoIntegradora, integradora, dataPedido, DATE_FORMAT(dataPedido, '%Y-%m-%d %H:%i:%s') AS dataPedidoFormatada
         FROM pedidoconfirmaintegracao
         ${whereSql}
         ORDER BY codigo DESC

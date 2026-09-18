@@ -8,14 +8,14 @@
   </button>
 </div>
 
-<div class="alert info" *ngIf="!escritaLiberada">
+<div class="alert info" *ngIf="crontabCarregado && !escritaLiberada">
   Edicao bloqueada por seguranca. Para liberar gravacao, configure <strong>ALLOW_CRON_WRITE=true</strong> no backend.
 </div>
 <div class="alert error" *ngIf="erro">{{ erro }}</div>
 <div class="alert success" *ngIf="sucesso">{{ sucesso }}</div>
 
 <section class="cron-card">
-  <textarea [(ngModel)]="crontab" [readonly]="!escritaLiberada" spellcheck="false"></textarea>
+  <textarea [(ngModel)]="crontab" [readonly]="crontabCarregado && !escritaLiberada" spellcheck="false"></textarea>
   <div class="actions">
     <button class="btn-secondary" type="button" (click)="carregar()">Recarregar</button>
     <button class="btn-primary" type="button" (click)="salvar()" [disabled]="!escritaLiberada || carregando">Salvar crontab</button>

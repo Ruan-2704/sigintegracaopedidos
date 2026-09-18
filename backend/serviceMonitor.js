@@ -58,9 +58,18 @@ const PALAVRAS_IGNORAR = [
   'nenhum item na fila',
   'não gerou nenhum arquivo',
   'nao gerou nenhum arquivo',
-    'invalid character found in method name',
+  'invalid character found in method name',
   'http method names must be tokens',
   'invalid character found in the http protocol',
+  'pthread_create failed',
+  'unable to create native thread',
+  'failed to start the native thread',
+  'failed to start thread "unknown thread"',
+  'failed to start bean \'webserverstartstop\'',
+  'application run failed',
+  'exception encountered during context initialization - cancelling refresh attempt',
+  'invocation of close method failed on bean with name \'datasource\'',
+  'possibly out of memory or process/resource limits reached',
 ];
 
 function alvoServico(chave) {
@@ -77,6 +86,18 @@ function isServicoContinuo(chave) {
 
 function bancoConfigurado() {
   return Boolean(process.env.DB_HOST && process.env.DB_USER && process.env.DB_DATABASE);
+}
+
+function erroSshTransitorio(error) {
+  const mensagem = String(error?.message || '').toLowerCase();
+  return mensagem.includes('excedeu')
+    || mensagem.includes('econnreset')
+    || mensagem.includes('timed out')
+    || mensagem.includes('timeout');
+}
+
+function debugMonitorAtivo() {
+  return String(process.env.DEBUG_SERVICE_MONITOR || 'false').toLowerCase() === 'true';
 }
 
 function registrarServicoLogSeguro(payload) {
@@ -314,7 +335,9 @@ async function checarServicos(SERVICOS) {
         await checarJob(chave, servico);
       }
     } catch (error) {
-      console.error(`Falha interna ao monitorar ${chave}:`, error.message);
+      if (!erroSshTransitorio(error) || debugMonitorAtivo()) {
+        console.warn(`Monitoramento de ${chave} indisponivel:`, error.message);
+      }
 
       estado.set(chave, {
         online: false,

@@ -57,6 +57,27 @@ function normalizarData(value, endOfDay = false) {
   return `${texto} ${endOfDay ? '23:59:59' : '00:00:00'}`;
 }
 
+const RUIDOS_OPERACIONAIS = [
+  'pthread_create failed',
+  'unable to create native thread',
+  'failed to start the native thread',
+  'failed to start thread "unknown thread"',
+  'failed to start bean',
+  'webserverstartstop',
+  'application run failed',
+  'exception encountered during context initialization - cancelling refresh attempt',
+  'invocation of close method failed on bean with name',
+  'possibly out of memory or process/resource limits reached',
+];
+
+function aplicarFiltroRuidoOperacional(where, params) {
+  for (const ruido of RUIDOS_OPERACIONAIS) {
+    where.push('(LOWER(COALESCE(mensagem, "")) NOT LIKE ? AND LOWER(COALESCE(detalhe, "")) NOT LIKE ?)');
+    const like = `%${ruido}%`;
+    params.push(like, like);
+  }
+}
+
 async function registrarServicoLog({
   req,
   servico,
@@ -139,6 +160,8 @@ async function listarServicosLogs({
     where.push('criado_em <= ?');
     params.push(fim);
   }
+
+  aplicarFiltroRuidoOperacional(where, params);
 
   const termo = String(search || '').trim();
   if (termo) {
