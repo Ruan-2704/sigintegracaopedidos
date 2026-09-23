@@ -1,45 +1,210 @@
 <div class="page-title">
   <div>
-    <h2>Pedidos Inseridos</h2>
-    <p>Pedidos confirmados pelas integrações SmartPed / Cotefácil.</p>
+    <h2>Pedidos da Integracao</h2>
+    <p>Eventos de pedidos inseridos, rejeitados, duplicados ou com erro.</p>
   </div>
-  <button type="button" class="btn-primary" (click)="carregar(true)" [disabled]="carregando">{{ carregando ? 'Atualizando...' : 'Atualizar' }}</button>
+  <button type="button" class="btn-primary" (click)="carregar(true)" [disabled]="carregando">
+    {{ carregando ? 'Atualizando...' : 'Atualizar' }}
+  </button>
 </div>
 
 <section class="filters-card compact-grid">
-  <div class="field grow"><label>Busca geral</label><input type="text" placeholder="Carrinho, campanha, integradora..." [(ngModel)]="filtro" (keyup.enter)="aplicarFiltro()" /></div>
-  <div class="field"><label>Campanha</label><input type="text" placeholder="Id campanha" [(ngModel)]="filtroCampanha" (keyup.enter)="aplicarFiltro()" /></div>
-  <div class="field"><label>CNPJ</label><input type="text" placeholder="Loja ou distribuidor" [(ngModel)]="filtroCnpj" (keyup.enter)="aplicarFiltro()" /></div>
-  <div class="field"><label>Integradora</label><select [(ngModel)]="filtroIntegradora"><option value="">Todas</option><option value="SMARTPED">SMARTPED</option><option value="COTEFACIL">COTEFACIL</option></select></div>
-  <div class="field"><label>Data inicial</label><input type="date" [(ngModel)]="dataInicio" /></div>
-  <div class="field"><label>Data final</label><input type="date" [(ngModel)]="dataFim" /></div>
-  <div class="field small-field"><label>Itens</label><select [(ngModel)]="itensPorPagina" (change)="alterarItensPorPagina()"><option [ngValue]="10">10</option><option [ngValue]="20">20</option><option [ngValue]="50">50</option></select></div>
-  <div class="filter-actions"><button class="btn-primary" type="button" (click)="aplicarFiltro()">Filtrar</button><button class="btn-secondary" type="button" (click)="limparFiltro()">Limpar</button></div>
+  <div class="field grow">
+    <label>Busca geral</label>
+    <input type="text" placeholder="Pedido, carrinho, CNPJ, rastreio, motivo..." [(ngModel)]="filtro" (keyup.enter)="aplicarFiltro()" />
+  </div>
+
+  <div class="field">
+    <label>Status</label>
+    <select [(ngModel)]="filtroStatus" (change)="aplicarFiltro()">
+      <option value="">Todos</option>
+      <option value="INSERIDO">Inseridos</option>
+      <option value="REJEITADO">Rejeitados</option>
+      <option value="ERRO">Com erro</option>
+      <option value="DUPLICADO">Duplicados</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label>Campanha / OL</label>
+    <input type="text" placeholder="Id campanha" [(ngModel)]="filtroCampanha" (keyup.enter)="aplicarFiltro()" />
+  </div>
+
+  <div class="field">
+    <label>CNPJ</label>
+    <input type="text" placeholder="Loja ou distribuidor" [(ngModel)]="filtroCnpj" (keyup.enter)="aplicarFiltro()" />
+  </div>
+
+  <div class="field">
+    <label>Integradora</label>
+    <select [(ngModel)]="filtroIntegradora" (change)="aplicarFiltro()">
+      <option value="">Todas</option>
+      <option value="SMARTPED">SMARTPED</option>
+      <option value="COTEFACIL">COTEFACIL</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label>Data inicial</label>
+    <input type="date" [(ngModel)]="dataInicio" />
+  </div>
+
+  <div class="field">
+    <label>Data final</label>
+    <input type="date" [(ngModel)]="dataFim" />
+  </div>
+
+  <div class="field small-field">
+    <label>Itens</label>
+    <select [(ngModel)]="itensPorPagina" (change)="alterarItensPorPagina()">
+      <option [ngValue]="10">10</option>
+      <option [ngValue]="20">20</option>
+      <option [ngValue]="50">50</option>
+    </select>
+  </div>
+
+  <div class="filter-actions">
+    <button class="btn-primary" type="button" (click)="aplicarFiltro()">Filtrar</button>
+    <button class="btn-secondary" type="button" (click)="limparFiltro()">Limpar</button>
+  </div>
 </section>
 
-<div class="summary-line"><span><strong>{{ totalRegistros }}</strong> pedidos encontrados</span><span *ngIf="ultimaAtualizacao">Atualizado em {{ ultimaAtualizacao | date:'dd/MM/yyyy HH:mm:ss' }}</span></div>
+<div class="summary-line">
+  <span><strong>{{ totalRegistros }}</strong> eventos encontrados</span>
+  <span *ngIf="ultimaAtualizacao">Atualizado em {{ ultimaAtualizacao | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+</div>
+
 <div *ngIf="carregando" class="state-card">Carregando pedidos...</div>
 <div *ngIf="!carregando && erro" class="state-card error">{{ erro }}</div>
 <div *ngIf="!carregando && !erro && pedidos.length === 0" class="state-card">Nenhum pedido encontrado.</div>
 
 <div class="table-card" *ngIf="!carregando && !erro && pedidos.length > 0">
   <table>
-    <thead><tr><th>Código</th><th>Carrinho</th><th>CNPJ Loja</th><th>CNPJ Distribuidor</th><th>Campanha</th><th>Pedido Integrador</th><th>Integradora</th><th>Data</th><th>Ação</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Data</th>
+        <th>Pedido</th>
+        <th>Cliente</th>
+        <th>Distribuidor</th>
+        <th>Campanha / OL</th>
+        <th>Itens</th>
+        <th>Motivo</th>
+        <th>Integradora</th>
+        <th>Acao</th>
+      </tr>
+    </thead>
     <tbody>
-      <tr *ngFor="let item of pedidos">
-        <td>{{ item.codigo }}</td>
-        <td><strong>{{ item.numeroCarrinhoDeCompras }}</strong></td>
-        <td>{{ item.CnpjCliente }}</td>
-        <td>{{ item.CnpjDistribuidor }}</td>
-        <td><span class="badge neutral">{{ item.IdCampanha }}</span><small>{{ item.NomeCampanha }}</small></td>
-        <td>{{ item.pedidoIntegradora }}</td>
-        <td><span class="badge good">{{ item.integradora || '-' }}</span></td>
+      <tr *ngFor="let item of pedidos" [ngClass]="'row-' + classeStatus(item)">
+        <td><span class="badge" [ngClass]="classeStatus(item)">{{ rotuloStatus(item) }}</span></td>
         <td>{{ formatarDataPedido(item) }}</td>
-        <td><button type="button" class="btn-table" (click)="visualizar(item)">Ver</button></td>
+        <td>
+          <strong>{{ item.pedidoIntegrador || item.pedidoIntegradora || '-' }}</strong>
+          <small>Carrinho: {{ item.numeroCarrinho || item.numeroCarrinhoDeCompras || '-' }}</small>
+          <small *ngIf="item.rastreio">Rastreio: {{ item.rastreio }}</small>
+        </td>
+        <td>{{ item.cnpjCliente || item.CnpjCliente || '-' }}</td>
+        <td>{{ item.cnpjDistribuidor || item.CnpjDistribuidor || '-' }}</td>
+        <td>
+          <span class="badge neutral">{{ item.idCampanha || item.IdCampanha || '-' }}</span>
+          <small>OL: {{ item.idOl || item.IdOL || '-' }}</small>
+        </td>
+        <td>{{ item.itens || '-' }}</td>
+        <td>
+          <strong>{{ item.motivo || '-' }}</strong>
+          <small>{{ item.mensagem || '' }}</small>
+        </td>
+        <td><span class="badge soft">{{ item.integradora || '-' }}</span></td>
+        <td>
+          <div class="table-actions">
+            <button type="button" class="btn-table" (click)="visualizar(item)">Ver</button>
+            <button type="button" class="btn-secondary small" *ngIf="podeValidar(item)" (click)="visualizar(item, true)">Validar</button>
+          </div>
+        </td>
       </tr>
     </tbody>
   </table>
-  <div class="pagination"><button type="button" class="btn-secondary" (click)="paginaAnterior()" [disabled]="paginaAtual === 1">Anterior</button><span>Página {{ paginaAtual }} de {{ totalPaginas }}</span><button type="button" class="btn-secondary" (click)="proximaPagina()" [disabled]="paginaAtual === totalPaginas">Próxima</button></div>
+
+  <div class="pagination">
+    <button type="button" class="btn-secondary" (click)="paginaAnterior()" [disabled]="paginaAtual === 1">Anterior</button>
+    <span>Pagina {{ paginaAtual }} de {{ totalPaginas }}</span>
+    <button type="button" class="btn-secondary" (click)="proximaPagina()" [disabled]="paginaAtual === totalPaginas">Proxima</button>
+  </div>
 </div>
 
-<div class="modal-backdrop" *ngIf="selecionado"><div class="modal large"><div class="modal-header"><div><h2>Detalhes do Pedido</h2><p>Registro {{ selecionado.codigo }}</p></div><button type="button" class="btn-secondary" (click)="fechar()">Fechar</button></div><pre>{{ selecionado | json }}</pre></div></div>
+<div class="modal-backdrop" *ngIf="selecionado">
+  <div class="modal large">
+    <div class="modal-header">
+      <div>
+        <h2>Detalhes do Pedido</h2>
+        <p>
+          Registro {{ selecionado.id || selecionado.codigo }}
+          <span class="badge" [ngClass]="classeStatus(selecionado)">{{ rotuloStatus(selecionado) }}</span>
+        </p>
+      </div>
+      <button type="button" class="btn-secondary" (click)="fechar()">Fechar</button>
+    </div>
+
+    <div class="modal-tabs">
+      <button type="button" [class.active]="abaDetalhe === 'resumo'" (click)="selecionarAba('resumo')">Resumo</button>
+      <button type="button" [class.active]="abaDetalhe === 'recebido'" (click)="selecionarAba('recebido')">Payload recebido</button>
+      <button type="button" [class.active]="abaDetalhe === 'sigrede'" (click)="selecionarAba('sigrede')">Payload SIGREDE</button>
+      <button type="button" [class.active]="abaDetalhe === 'retorno'" (click)="selecionarAba('retorno')">Retorno</button>
+      <button type="button" [class.active]="abaDetalhe === 'validacao'" (click)="validarErro()" [disabled]="!podeValidar()">Validacao</button>
+    </div>
+
+    <section class="detail-panel" *ngIf="abaDetalhe === 'resumo'">
+      <div class="detail-grid">
+        <div><label>Status</label><strong>{{ rotuloStatus(selecionado) }}</strong></div>
+        <div><label>Data</label><strong>{{ formatarDataPedido(selecionado) }}</strong></div>
+        <div><label>Integradora</label><strong>{{ selecionado.integradora || '-' }}</strong></div>
+        <div><label>Usuario</label><strong>{{ selecionado.username || '-' }}</strong></div>
+        <div><label>Pedido integrador</label><strong>{{ selecionado.pedidoIntegrador || selecionado.pedidoIntegradora || '-' }}</strong></div>
+        <div><label>Cotacao integrador</label><strong>{{ selecionado.cotacaoIntegrador || '-' }}</strong></div>
+        <div><label>Pedido cliente</label><strong>{{ selecionado.pedidoCliente || '-' }}</strong></div>
+        <div><label>Carrinho</label><strong>{{ selecionado.numeroCarrinho || selecionado.numeroCarrinhoDeCompras || '-' }}</strong></div>
+        <div><label>CNPJ cliente</label><strong>{{ selecionado.cnpjCliente || selecionado.CnpjCliente || '-' }}</strong></div>
+        <div><label>CNPJ distribuidor</label><strong>{{ selecionado.cnpjDistribuidor || selecionado.CnpjDistribuidor || '-' }}</strong></div>
+        <div><label>Campanha</label><strong>{{ selecionado.idCampanha || selecionado.IdCampanha || '-' }}</strong></div>
+        <div><label>OL</label><strong>{{ selecionado.idOl || selecionado.IdOL || '-' }}</strong></div>
+        <div><label>Itens</label><strong>{{ selecionado.itens || '-' }}</strong></div>
+        <div><label>Rastreio</label><strong>{{ selecionado.rastreio || '-' }}</strong></div>
+      </div>
+
+      <div class="message-box" *ngIf="selecionado.motivo || selecionado.mensagem">
+        <label>Motivo / mensagem</label>
+        <strong>{{ selecionado.motivo || '-' }}</strong>
+        <p>{{ selecionado.mensagem || '-' }}</p>
+      </div>
+    </section>
+
+    <section class="detail-panel" *ngIf="abaDetalhe === 'recebido'">
+      <pre>{{ formatarJson(selecionado.payloadRecebido || selecionado.payload_recebido) }}</pre>
+    </section>
+
+    <section class="detail-panel" *ngIf="abaDetalhe === 'sigrede'">
+      <pre>{{ formatarJson(selecionado.payloadSigrede || selecionado.payload_sigrede) }}</pre>
+    </section>
+
+    <section class="detail-panel" *ngIf="abaDetalhe === 'retorno'">
+      <pre>{{ formatarJson(selecionado.payloadRetorno || selecionado.payload_retorno) }}</pre>
+    </section>
+
+    <section class="detail-panel" *ngIf="abaDetalhe === 'validacao'">
+      <div class="validation-header">
+        <div>
+          <h3>Validacao automatica</h3>
+          <p>Leitura inicial do motivo, mensagem e payload recebido.</p>
+        </div>
+        <button type="button" class="btn-primary" (click)="validarErro()">Validar novamente</button>
+      </div>
+
+      <div class="validation-list">
+        <article class="validation-item" *ngFor="let validacao of validacoesSelecionado" [ngClass]="validacao.nivel">
+          <strong>{{ validacao.titulo }}</strong>
+          <p>{{ validacao.detalhe }}</p>
+        </article>
+      </div>
+    </section>
+  </div>
+</div>

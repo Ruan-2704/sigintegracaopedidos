@@ -3,7 +3,7 @@ const fs = require('fs');
 const { spawn, exec } = require('child_process');
 const { runSshCommand } = require('./sshClient');
 
-const DEFAULT_PEDIDOS_JAR = 'envia-cotacao-0.0.4.jar';
+const DEFAULT_PEDIDOS_JAR = 'envia-cotacao-0.0.5.jar';
 const DEFAULT_PEDIDOS_LOG = 'logs/integracao-pedidos.log';
 
 function isSshMode() {
@@ -296,8 +296,8 @@ function classificarLinhaLog(linha = '', chave = '') {
     };
   }
 
-  if (/(pedido|cotacao|cotação).*(inserid|enviad|confirmad|sucesso|gravado)/i.test(mensagem)) {
-    const pedido = extrairNumero(mensagem, ['pedido', 'cotacao', 'cotação', 'carrinho']);
+  if (/(pedido|cotacao|cotaÃ§Ã£o).*(inserid|enviad|confirmad|sucesso|gravado)/i.test(mensagem)) {
+    const pedido = extrairNumero(mensagem, ['pedido', 'cotacao', 'cotaÃ§Ã£o', 'carrinho']);
 
     return {
       tipo: 'PEDIDO',
@@ -309,8 +309,8 @@ function classificarLinhaLog(linha = '', chave = '') {
     };
   }
 
-  if (chave === 'pedidos' && /(x-rastreio|rastreio|payloadRecebido|payloadSigrede|pedido|cotacao|cotação|bucket|campanha)/i.test(mensagem)) {
-    const status = /(n[ãa]o inserid|inexistente|n[ãa]o encontrad|sem json|erro|error|falha)/i.test(mensagem)
+  if (chave === 'pedidos' && /(x-rastreio|rastreio|payloadRecebido|payloadSigrede|pedido|cotacao|cotaÃ§Ã£o|bucket|campanha)/i.test(mensagem)) {
+    const status = /(n[Ã£a]o inserid|inexistente|n[Ã£a]o encontrad|sem json|erro|error|falha)/i.test(mensagem)
       ? 'ALERTA'
       : 'INFO';
 
@@ -324,12 +324,12 @@ function classificarLinhaLog(linha = '', chave = '') {
     };
   }
 
-  if (/(campanha).*(processad|gerad|finalizad|iniciad|sem produtos|sem arquivo|não gerou|nao gerou)/i.test(mensagem)) {
+  if (/(campanha).*(processad|gerad|finalizad|iniciad|sem produtos|sem arquivo|nÃ£o gerou|nao gerou)/i.test(mensagem)) {
     const campanha = extrairNumero(mensagem, ['campanha']);
 
     return {
       tipo: 'CAMPANHA',
-      status: lower.includes('não gerou') || lower.includes('nao gerou') ? 'ALERTA' : 'INFO',
+      status: lower.includes('nÃ£o gerou') || lower.includes('nao gerou') ? 'ALERTA' : 'INFO',
       mensagem: campanha ? `Campanha avaliada: ${campanha}` : 'Campanha avaliada.',
       detalhe: mensagem,
       data: extrairDataLog(linha),
@@ -337,10 +337,10 @@ function classificarLinhaLog(linha = '', chave = '') {
     };
   }
 
-  if (/(iniciando|inicio|início|executando|finalizado|finalizada|concluido|concluído|processo finalizado)/i.test(mensagem)) {
+  if (/(iniciando|inicio|inÃ­cio|executando|finalizado|finalizada|concluido|concluÃ­do|processo finalizado)/i.test(mensagem)) {
     return {
       tipo: 'EXECUCAO',
-      status: /(finalizado|finalizada|concluido|concluído)/i.test(mensagem) ? 'SUCESSO' : 'INFO',
+      status: /(finalizado|finalizada|concluido|concluÃ­do)/i.test(mensagem) ? 'SUCESSO' : 'INFO',
       mensagem,
       data: extrairDataLog(linha),
       linhaOriginal: linha,
@@ -651,7 +651,7 @@ async function lerCrontabTexto(target = 'files') {
 
 async function salvarCrontab(content) {
   if (process.env.ALLOW_CRON_WRITE !== 'true') {
-    throw new Error('Edição de crontab bloqueada');
+    throw new Error('EdiÃ§Ã£o de crontab bloqueada');
   }
 
   const safeContent = Buffer.from(content || '', 'utf8').toString('base64');
@@ -780,7 +780,7 @@ async function lerLogRemoto(scriptName, linhas = 300, target = 'files', options 
 }
 
 function linhaErroLogPedidos(linha = '') {
-  return /(ERROR|WARN|erro|falha|exception|unauthorized|forbidden|token|login|X-Rastreio|rastreio|payloadRecebido|payloadSigrede|pedido.*n[ãa]o inserid|n[ãa]o encontrad|inexistente|sem json|timeout|refused)/i
+  return /(ERROR|WARN|erro|falha|exception|unauthorized|forbidden|token|login|X-Rastreio|rastreio|payloadRecebido|payloadSigrede|pedido.*n[Ã£a]o inserid|n[Ã£a]o encontrad|inexistente|sem json|timeout|refused)/i
     .test(String(linha || ''));
 }
 
