@@ -1,7 +1,7 @@
 <div class="page-title">
   <div>
-    <h2>Logs e Auditoria</h2>
-    <p>Consulta unificada de eventos operacionais, erros da API de pedidos, execucoes do cron e acoes do painel.</p>
+    <h2>Logs</h2>
+    <p>Consulta direta dos erros da API de pedidos e dos logs das rotinas agendadas.</p>
   </div>
   <button type="button" class="btn-primary" (click)="atualizarAba()" [disabled]="carregando || carregandoPedidosApi || carregandoLogsCron || carregandoAuditoria">
     Atualizar grupo
@@ -9,10 +9,6 @@
 </div>
 
 <section class="log-groups">
-  <button type="button" [class.active]="abaAtiva === 'operacionais'" (click)="trocarAba('operacionais')">
-    <strong>Eventos operacionais</strong>
-    <span>servicos, arquivos e pedidos</span>
-  </button>
   <button type="button" [class.active]="abaAtiva === 'pedidos-api'" (click)="trocarAba('pedidos-api')">
     <strong>Erros da API de pedidos</strong>
     <span>payloads, login e rastreios</span>
@@ -20,10 +16,6 @@
   <button type="button" [class.active]="abaAtiva === 'cron'" (click)="trocarAba('cron')">
     <strong>Logs do crontab</strong>
     <span>geracao e exclusao</span>
-  </button>
-  <button type="button" [class.active]="abaAtiva === 'auditoria'" (click)="trocarAba('auditoria')">
-    <strong>Acoes do painel</strong>
-    <span>historico administrativo</span>
   </button>
 </section>
 
@@ -135,7 +127,7 @@
     <div>
       <span class="eyebrow">API de pedidos</span>
       <h3>Erros e rastreios da integracao</h3>
-      <p>Consulta do arquivo gerado pela API de pedidos, agrupado separado dos eventos do painel.</p>
+      <p>Consulta do arquivo atual gerado pela API de pedidos. Os arquivos rotacionados ficam no servidor por ate 7 dias.</p>
     </div>
     <button type="button" class="btn-primary" (click)="carregarLogErrosPedidos(true)" [disabled]="carregandoPedidosApi">
       {{ carregandoPedidosApi ? 'Consultando...' : 'Consultar log' }}

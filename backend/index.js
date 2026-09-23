@@ -81,7 +81,7 @@ const TOKEN_TTL_SECONDS = Number(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 12);
 const SIG_FOLDER = process.env.SIGCOTEFACIL_FOLDER || '/home/sigpedidos/sigcotefacil';
 const RUNTIME_LOG_DIR = process.env.RUNTIME_LOG_DIR || path.join(__dirname, 'runtime-logs');
 const ALLOW_CRON_WRITE = String(process.env.ALLOW_CRON_WRITE || 'false').toLowerCase() === 'true';
-const DEFAULT_PEDIDOS_JAR = 'envia-cotacao-0.0.4.jar';
+const DEFAULT_PEDIDOS_JAR = 'envia-cotacao-0.0.5.jar';
 const DEFAULT_PEDIDOS_LOG = 'logs/integracao-pedidos.log';
 const dashboardCache = {
   bucket: criarCache(60000),
@@ -193,19 +193,19 @@ function calcularNovasLinhas(linhasAnteriores = [], linhasAtuais = []) {
 const SERVICOS = {
   geracao: {
     chave: 'geracao',
-    nome: 'Geração de arquivos',
+    nome: 'GeraÃƒÂ§ÃƒÂ£o de arquivos',
     script: process.env.SCRIPT_GERACAO || 'executa_script.sh',
     porta: Number(process.env.GERACAO_PORT || 8080),
   },
   exclusao: {
     chave: 'exclusao',
-    nome: 'Exclusão de arquivos',
+    nome: 'ExclusÃƒÂ£o de arquivos',
     script: process.env.SCRIPT_EXCLUSAO || 'executa_exclusao_script.sh',
     porta: Number(process.env.EXCLUSAO_PORT || 8081),
   },
   pedidos: {
     chave: 'pedidos',
-    nome: 'API inserção de pedidos',
+    nome: 'API inserÃƒÂ§ÃƒÂ£o de pedidos',
     jar: process.env.JAR_PEDIDOS || DEFAULT_PEDIDOS_JAR,
     errorLogFile: process.env.LOG_PEDIDOS_ERROS_FILE || DEFAULT_PEDIDOS_LOG,
     porta: Number(process.env.PEDIDOS_PORT || 8080),
@@ -255,7 +255,7 @@ function contextoLogServico(req, chave) {
   };
 }
 
-function timeoutPromise(promise, ms, label = 'operação') {
+function timeoutPromise(promise, ms, label = 'operaÃƒÂ§ÃƒÂ£o') {
   let timer;
 
   const limite = new Promise((_, reject) => {
@@ -324,7 +324,7 @@ async function safePidsServico(chave) {
     return Array.isArray(pids) ? pids : [];
   } catch (error) {
     if (!erroSshTransitorio(error) || debugStatusSshAtivo()) {
-      console.warn(`Status do serviço ${chave} indisponível:`, error.message);
+      console.warn(`Status do serviÃƒÂ§o ${chave} indisponÃƒÂ­vel:`, error.message);
     }
     return [];
   }
@@ -382,7 +382,7 @@ async function atualizarStatusServicos({ detectarQueda = true } = {}) {
   servidor: servidorServico('geracao'),
   tipo: 'job',
   online: geracaoPids.length > 0,
-  statusOperacional: geracaoPids.length > 0 ? 'executando' : 'aguardando execução',
+  statusOperacional: geracaoPids.length > 0 ? 'executando' : 'aguardando execuÃƒÂ§ÃƒÂ£o',
   pids: geracaoPids,
   target: 'files',
 },
@@ -393,7 +393,7 @@ async function atualizarStatusServicos({ detectarQueda = true } = {}) {
   servidor: servidorServico('exclusao'),
   tipo: 'job',
   online: exclusaoPids.length > 0,
-  statusOperacional: exclusaoPids.length > 0 ? 'executando' : 'aguardando execução',
+  statusOperacional: exclusaoPids.length > 0 ? 'executando' : 'aguardando execuÃƒÂ§ÃƒÂ£o',
   pids: exclusaoPids,
   target: 'files',
 },
@@ -426,10 +426,10 @@ if (detectarQueda) {
         servico: data[key].nome,
         tipo: 'SERVICO_OFFLINE',
         severidade: 'ALERTA',
-        mensagem: `O serviço ${data[key].nome} ficou offline.`,
+        mensagem: `O serviÃƒÂ§o ${data[key].nome} ficou offline.`,
         servidor: data[key].servidor,
         porta: data[key].porta,
-        assunto: `🚨 Serviço offline - ${data[key].nome}`,
+        assunto: `Ã°Å¸Å¡Â¨ ServiÃƒÂ§o offline - ${data[key].nome}`,
       }).catch((error) => {
         console.error(`Falha ao enviar alerta offline ${key}:`, error.message);
       });
@@ -461,7 +461,7 @@ function atualizarStatusServicosEmBackground({ detectarQueda = true } = {}) {
 
   statusServicosRefreshPromise = atualizarStatusServicos({ detectarQueda })
     .catch((error) => {
-      console.error('Falha ao atualizar cache de status dos serviços:', error.message);
+      console.error('Falha ao atualizar cache de status dos serviÃƒÂ§os:', error.message);
       return null;
     })
     .finally(() => {
@@ -606,7 +606,7 @@ function authMiddleware(req, res, next) {
   const payload = validarToken(token);
 
   if (!payload) {
-    return erroResponse(res, 401, 'Acesso não autorizado. Faça login novamente.');
+    return erroResponse(res, 401, 'Acesso nÃƒÂ£o autorizado. FaÃƒÂ§a login novamente.');
   }
 
   req.usuario = payload;
@@ -630,7 +630,7 @@ app.post('/auth/login', (req, res) => {
   const tokenInformado = String(req.body?.token || req.body?.password || '').trim();
 
   if (!tokenInformado || tokenInformado !== PANEL_TOKEN) {
-    return erroResponse(res, 401, 'Token inválido.');
+    return erroResponse(res, 401, 'Token invÃƒÂ¡lido.');
   }
 
   const now = Math.floor(Date.now() / 1000);
@@ -713,17 +713,17 @@ function validarServicoScript(chave) {
   const servico = SERVICOS[chave];
 
   if (!servico || !servico.script) {
-    throw new Error('Serviço inválido para execução de script.');
+    throw new Error('ServiÃƒÂ§o invÃƒÂ¡lido para execuÃƒÂ§ÃƒÂ£o de script.');
   }
 
   const scriptPath = path.join(SIG_FOLDER, servico.script);
 
   if (!fs.existsSync(SIG_FOLDER)) {
-    throw new Error(`Diretório não encontrado: ${SIG_FOLDER}`);
+    throw new Error(`DiretÃƒÂ³rio nÃƒÂ£o encontrado: ${SIG_FOLDER}`);
   }
 
   if (!fs.existsSync(scriptPath)) {
-    throw new Error(`Script não encontrado: ${scriptPath}`);
+    throw new Error(`Script nÃƒÂ£o encontrado: ${scriptPath}`);
   }
 
   return { servico, scriptPath };
@@ -736,7 +736,7 @@ function iniciarScript(chave) {
     const atual = processos.get(chave);
 
     if (!atual.killed) {
-      throw new Error(`${servico.nome} já está em execução pelo painel. PID: ${atual.pid}`);
+      throw new Error(`${servico.nome} jÃƒÂ¡ estÃƒÂ¡ em execuÃƒÂ§ÃƒÂ£o pelo painel. PID: ${atual.pid}`);
     }
   }
 
@@ -944,7 +944,7 @@ app.get('/health', async (req, res) => {
 });
 
 /* =========================
-   OPERACIONAL / SERVIÇOS
+   OPERACIONAL / SERVIÃƒâ€¡OS
 ========================= */
 
 app.get('/servicos/status', authMiddleware, async (req, res) => {
@@ -966,7 +966,7 @@ app.get('/servicos/status', authMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
-    return erroResponse(res, 500, 'Erro ao consultar status dos serviços', error);
+    return erroResponse(res, 500, 'Erro ao consultar status dos serviÃƒÂ§os', error);
   }
 });
 
@@ -980,14 +980,14 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
       req,
       acao: 'INICIAR_SERVICO',
       alvo: 'geracao',
-      mensagem: 'Geração iniciada pelo painel.',
+      mensagem: 'GeraÃƒÂ§ÃƒÂ£o iniciada pelo painel.',
       detalhe: result,
     });
     registrarInicioServico(req, 'geracao', result);
 
     return res.json({
       success: true,
-      message: 'Geração iniciada com sucesso',
+      message: 'GeraÃƒÂ§ÃƒÂ£o iniciada com sucesso',
       data: result,
     });
   } catch (error) {
@@ -996,7 +996,7 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
       acao: 'INICIAR_SERVICO',
       alvo: 'geracao',
       status: 'ERRO',
-      mensagem: 'Erro ao iniciar geração.',
+      mensagem: 'Erro ao iniciar geraÃƒÂ§ÃƒÂ£o.',
       detalhe: error.stack || error.message,
     });
     registrarErroInicioServico(req, 'geracao', error);
@@ -1004,7 +1004,7 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao iniciar geração',
+      message: 'Erro ao iniciar geraÃƒÂ§ÃƒÂ£o',
       error: error.message,
     });
   }
@@ -1020,14 +1020,14 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
       req,
       acao: 'INICIAR_SERVICO',
       alvo: 'geracao',
-      mensagem: 'Geração iniciada pelo painel.',
+      mensagem: 'GeraÃƒÂ§ÃƒÂ£o iniciada pelo painel.',
       detalhe: result,
     });
     registrarInicioServico(req, 'geracao', result);
 
     return res.json({
       success: true,
-      message: 'Geração iniciada com sucesso',
+      message: 'GeraÃƒÂ§ÃƒÂ£o iniciada com sucesso',
       data: result,
     });
   } catch (error) {
@@ -1036,7 +1036,7 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
       acao: 'INICIAR_SERVICO',
       alvo: 'geracao',
       status: 'ERRO',
-      mensagem: 'Erro ao iniciar geração.',
+      mensagem: 'Erro ao iniciar geraÃƒÂ§ÃƒÂ£o.',
       detalhe: error.stack || error.message,
     });
     registrarErroInicioServico(req, 'geracao', error);
@@ -1044,7 +1044,7 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao iniciar geração',
+      message: 'Erro ao iniciar geraÃƒÂ§ÃƒÂ£o',
       error: error.message,
     });
   }
@@ -1060,14 +1060,14 @@ app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
       req,
       acao: 'INICIAR_SERVICO',
       alvo: 'exclusao',
-      mensagem: 'Exclusão iniciada pelo painel.',
+      mensagem: 'ExclusÃƒÂ£o iniciada pelo painel.',
       detalhe: result,
     });
     registrarInicioServico(req, 'exclusao', result);
 
     return res.json({
       success: true,
-      message: 'Exclusão iniciada com sucesso',
+      message: 'ExclusÃƒÂ£o iniciada com sucesso',
       data: result,
     });
   } catch (error) {
@@ -1076,14 +1076,14 @@ app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
       acao: 'INICIAR_SERVICO',
       alvo: 'exclusao',
       status: 'ERRO',
-      mensagem: 'Erro ao iniciar exclusão.',
+      mensagem: 'Erro ao iniciar exclusÃƒÂ£o.',
       detalhe: error.stack || error.message,
     });
     registrarErroInicioServico(req, 'exclusao', error);
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao iniciar exclusão',
+      message: 'Erro ao iniciar exclusÃƒÂ£o',
       error: error.message,
     });
   }
@@ -1099,14 +1099,14 @@ app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
       req,
       acao: 'INICIAR_SERVICO',
       alvo: 'exclusao',
-      mensagem: 'Exclusão iniciada pelo painel.',
+      mensagem: 'ExclusÃƒÂ£o iniciada pelo painel.',
       detalhe: result,
     });
     registrarInicioServico(req, 'exclusao', result);
 
     return res.json({
       success: true,
-      message: 'Exclusão iniciada com sucesso',
+      message: 'ExclusÃƒÂ£o iniciada com sucesso',
       data: result,
     });
   } catch (error) {
@@ -1115,14 +1115,14 @@ app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
       acao: 'INICIAR_SERVICO',
       alvo: 'exclusao',
       status: 'ERRO',
-      mensagem: 'Erro ao iniciar exclusão.',
+      mensagem: 'Erro ao iniciar exclusÃƒÂ£o.',
       detalhe: error.stack || error.message,
     });
     registrarErroInicioServico(req, 'exclusao', error);
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao iniciar exclusão',
+      message: 'Erro ao iniciar exclusÃƒÂ£o',
       error: error.message,
     });
   }
@@ -1212,7 +1212,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
     const servico = SERVICOS[chave];
 
     if (!servico) {
-      return erroResponse(res, 400, 'Serviço inválido.');
+      return erroResponse(res, 400, 'ServiÃƒÂ§o invÃƒÂ¡lido.');
     }
 
     const target = alvoServico(chave);
@@ -1231,7 +1231,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
 
     escreverLog(
       chave,
-      `Parada solicitada pelo painel. Serviço=${chave}, target=${target}, porta=${servico.porta}, PIDs antes=${
+      `Parada solicitada pelo painel. ServiÃƒÂ§o=${chave}, target=${target}, porta=${servico.porta}, PIDs antes=${
         pidsAntes.join(', ') || '-'
       }, PIDs encerrados=${(pidsEncerrados || []).join(', ') || '-'}, PIDs depois=${
         pidsDepois.join(', ') || '-'
@@ -1244,7 +1244,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       mensagem: pidsAntes.length
         ? pidsDepois.length
           ? 'Parada solicitada, mas ainda existem processos ativos.'
-          : 'Serviço parado com sucesso.'
+          : 'ServiÃƒÂ§o parado com sucesso.'
         : 'Nenhum processo ativo encontrado para parar.',
       detalhe: {
         target,
@@ -1262,7 +1262,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       mensagem: pidsAntes.length
         ? pidsDepois.length
           ? 'Parada solicitada, mas ainda existem processos ativos.'
-          : 'Serviço parado com sucesso.'
+          : 'ServiÃƒÂ§o parado com sucesso.'
         : 'Nenhum processo ativo encontrado para parar.',
       detalhe: {
         target,
@@ -1280,13 +1280,13 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
         servico: servico.nome,
         tipo: 'SERVICO_PARADO_MANUALMENTE',
         severidade: 'INFO',
-        mensagem: `Serviço ${servico.nome} parado manualmente pelo painel.`,
+        mensagem: `ServiÃƒÂ§o ${servico.nome} parado manualmente pelo painel.`,
         detalhe: `PIDs antes: ${pidsAntes.join(', ') || '-'} | PIDs encerrados: ${
           (pidsEncerrados || []).join(', ') || '-'
         } | PIDs depois: ${pidsDepois.join(', ') || '-'}`,
         servidor: servidorServico(chave),
         porta: servico.porta,
-        assunto: `Serviço parado manualmente - ${servico.nome}`,
+        assunto: `ServiÃƒÂ§o parado manualmente - ${servico.nome}`,
       }).catch((error) => {
         console.error('Falha ao registrar/enviar alerta de parada manual:', error.message);
       });
@@ -1297,7 +1297,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       message: pidsAntes.length
         ? pidsDepois.length
           ? 'Parada solicitada, mas ainda existem processos ativos. Aguarde e atualize novamente.'
-          : 'Serviço parado com sucesso.'
+          : 'ServiÃƒÂ§o parado com sucesso.'
         : 'Nenhum processo ativo encontrado para parar.',
       data: {
         servico: chave,
@@ -1315,18 +1315,18 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       acao: 'PARAR_SERVICO',
       alvo: req.params.servico,
       status: 'ERRO',
-      mensagem: 'Erro ao parar serviço.',
+      mensagem: 'Erro ao parar serviÃƒÂ§o.',
       detalhe: error.stack || error.message,
     });
     registrarServicoLogSeguro(eventoServicoPayload(req.params.servico, {
       req,
       tipo: 'PARAR_SERVICO',
       status: 'ERRO',
-      mensagem: 'Erro ao parar serviço.',
+      mensagem: 'Erro ao parar serviÃƒÂ§o.',
       detalhe: error.stack || error.message,
     }));
 
-    return erroResponse(res, 500, 'Erro ao parar serviço', error);
+    return erroResponse(res, 500, 'Erro ao parar serviÃƒÂ§o', error);
   }
 });
 
@@ -1442,7 +1442,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
     } else {
       return res.status(400).json({
         success: false,
-        message: 'Serviço inválido',
+        message: 'ServiÃƒÂ§o invÃƒÂ¡lido',
       });
     }
 
@@ -1454,7 +1454,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
         req,
         tipo: 'CONSULTA_LOG',
         status: 'INFO',
-        mensagem: `Log do serviço consultado pelo painel a partir do cache (${limit} linhas).`,
+        mensagem: `Log do serviÃƒÂ§o consultado pelo painel a partir do cache (${limit} linhas).`,
         detalhe: {
           linhas: cache.content.split('\n').filter(Boolean).length,
           target,
@@ -1491,7 +1491,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
       req,
       tipo: 'CONSULTA_LOG',
       status: detectarErroLog(content) ? 'ALERTA' : 'SUCESSO',
-      mensagem: `Log do serviço consultado pelo painel (${limit} linhas).`,
+      mensagem: `Log do serviÃƒÂ§o consultado pelo painel (${limit} linhas).`,
       detalhe: {
         linhas: content.split('\n').filter(Boolean).length,
         target,
@@ -1524,7 +1524,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: 'Erro ao ler log do serviço',
+      message: 'Erro ao ler log do serviÃƒÂ§o',
       error: error.message,
     });
   }
@@ -1549,7 +1549,7 @@ app.get('/servicos/logs/eventos', authMiddleware, async (req, res) => {
       meta: payload.meta,
     });
   } catch (error) {
-    return erroResponse(res, 500, 'Erro ao buscar eventos dos serviços', error);
+    return erroResponse(res, 500, 'Erro ao buscar eventos dos serviÃƒÂ§os', error);
   }
 });
 
@@ -1636,13 +1636,13 @@ app.get('/servicos/:servico/logs/stream', async (req, res) => {
   const chave = req.params.servico;
 
   if (!SERVICOS[chave]) {
-    return erroResponse(res, 400, 'Serviço inválido.');
+    return erroResponse(res, 400, 'ServiÃƒÂ§o invÃƒÂ¡lido.');
   }
 
   const scriptName = scriptOuJarServico(chave);
 
   if (!scriptName) {
-    return erroResponse(res, 400, 'Serviço sem script ou JAR configurado.');
+    return erroResponse(res, 400, 'ServiÃƒÂ§o sem script ou JAR configurado.');
   }
 
   const target = targetServicoLog(chave);
@@ -1863,7 +1863,7 @@ app.get('/painel/acoes', authMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
-    return erroResponse(res, 500, 'Erro ao listar ações do painel', error);
+    return erroResponse(res, 500, 'Erro ao listar aÃƒÂ§ÃƒÂµes do painel', error);
   }
 });
 
@@ -1879,7 +1879,7 @@ const REDES_ALIAS = {
   redefarma: 'RedeFarma',
   redemgfarma: 'Rede MG Farma',
   mercaweb: 'Merca Web',
-  vidafarmacias: 'Vida Farmácias',
+  vidafarmacias: 'Vida FarmÃƒÂ¡cias',
   grupoadmpharma: 'Grupo ADM Pharma',
 };
 
@@ -1992,7 +1992,7 @@ app.get('/dashboard', async (req, res) => {
             FROM mercaweb.farmacias
 
             UNION ALL
-            SELECT 'vidafarmacias', 'Vida Farmácias', FAR_CODIGO, FAR_NOME, FAR_CNPJ
+            SELECT 'vidafarmacias', 'Vida FarmÃƒÂ¡cias', FAR_CODIGO, FAR_NOME, FAR_CNPJ
             FROM vidafarmacias.farmacias
 
             UNION ALL
@@ -2196,14 +2196,14 @@ app.get('/arquivos/:nomeArquivo/preview', async (req, res) => {
     const nomeArquivo = decodeURIComponent(req.params.nomeArquivo || '');
 
     if (!nomeArquivo.toLowerCase().endsWith('.json')) {
-      return erroResponse(res, 400, 'Arquivo inválido');
+      return erroResponse(res, 400, 'Arquivo invÃƒÂ¡lido');
     }
 
     const file = storage.bucket(BUCKET_NAME).file(nomeArquivo);
     const [exists] = await file.exists();
 
     if (!exists) {
-      return erroResponse(res, 404, 'Arquivo não encontrado no bucket');
+      return erroResponse(res, 404, 'Arquivo nÃƒÂ£o encontrado no bucket');
     }
 
     const [buffer] = await file.download();
@@ -2234,14 +2234,14 @@ app.delete('/arquivos/:nomeArquivo', async (req, res) => {
     const nomeArquivo = decodeURIComponent(req.params.nomeArquivo || '');
 
     if (!nomeArquivo.toLowerCase().endsWith('.json')) {
-      return erroResponse(res, 400, 'Arquivo inválido');
+      return erroResponse(res, 400, 'Arquivo invÃƒÂ¡lido');
     }
 
     const file = storage.bucket(BUCKET_NAME).file(nomeArquivo);
     const [exists] = await file.exists();
 
     if (!exists) {
-      return erroResponse(res, 404, 'Arquivo não encontrado no bucket');
+      return erroResponse(res, 404, 'Arquivo nÃƒÂ£o encontrado no bucket');
     }
 
     await file.delete();
@@ -2249,7 +2249,7 @@ app.delete('/arquivos/:nomeArquivo', async (req, res) => {
       req,
       acao: 'EXCLUIR_ARQUIVO',
       alvo: nomeArquivo,
-      mensagem: 'Arquivo excluído pelo painel.',
+      mensagem: 'Arquivo excluÃƒÂ­do pelo painel.',
       detalhe: {
         bucket: BUCKET_NAME,
         nomeArquivo,
@@ -2258,7 +2258,7 @@ app.delete('/arquivos/:nomeArquivo', async (req, res) => {
 
     return res.json({
       success: true,
-      message: 'Arquivo excluído com sucesso',
+      message: 'Arquivo excluÃƒÂ­do com sucesso',
       data: {
         nomeArquivo,
       },
@@ -2286,31 +2286,36 @@ app.get('/pedidos', async (req, res) => {
     const { page, limit, offset } = parsePagination(req, 20, 200);
     const params = [];
     const where = [];
-    const datas = filtrosData(req, 'dataPedido');
+    const datas = filtrosData(req, 'data_hora');
 
     if (req.query.search) {
       const like = `%${req.query.search}%`;
-
-      where.push(
-        '(numeroCarrinhoDeCompras LIKE ? OR CnpjDistribuidor LIKE ? OR CnpjCliente LIKE ? OR IdCampanha LIKE ? OR NomeCampanha LIKE ? OR pedidoIntegradora LIKE ? OR integradora LIKE ?)'
-      );
-
-      params.push(like, like, like, like, like, like, like);
+      where.push(`(
+        numero_carrinho LIKE ? OR pedido_integrador LIKE ? OR cotacao_integrador LIKE ? OR pedido_cliente LIKE ? OR
+        cnpj_cliente LIKE ? OR cnpj_distribuidor LIKE ? OR id_campanha LIKE ? OR id_ol LIKE ? OR
+        integradora LIKE ? OR rastreio LIKE ? OR motivo LIKE ? OR mensagem LIKE ?
+      )`);
+      params.push(like, like, like, like, like, like, like, like, like, like, like, like);
     }
 
     if (req.query.campanha) {
-      where.push('IdCampanha = ?');
-      params.push(req.query.campanha);
+      where.push('(id_campanha = ? OR id_ol = ?)');
+      params.push(req.query.campanha, req.query.campanha);
     }
 
     if (req.query.cnpj) {
-      where.push('(CnpjCliente LIKE ? OR CnpjDistribuidor LIKE ?)');
+      where.push('(cnpj_cliente LIKE ? OR cnpj_distribuidor LIKE ?)');
       params.push(`%${req.query.cnpj}%`, `%${req.query.cnpj}%`);
     }
 
     if (req.query.integradora) {
-      where.push('integradora = ?');
+      where.push('LOWER(integradora) = LOWER(?)');
       params.push(req.query.integradora);
+    }
+
+    if (req.query.status) {
+      where.push('status = ?');
+      params.push(String(req.query.status).toUpperCase());
     }
 
     where.push(...datas.where);
@@ -2319,16 +2324,41 @@ app.get('/pedidos', async (req, res) => {
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const [totalRows] = await queryComTimeout(
-      `SELECT COUNT(*) AS total FROM pedidoconfirmaintegracao ${whereSql}`,
+      `SELECT COUNT(*) AS total FROM integracao_pedido_evento ${whereSql}`,
       params
     );
 
     const [rows] = await queryComTimeout(
       `
-        SELECT codigo, numeroCarrinhoDeCompras, CnpjDistribuidor, CnpjCliente, IdCampanha, NomeCampanha, pedidoIntegradora, integradora, dataPedido, DATE_FORMAT(dataPedido, '%Y-%m-%d %H:%i:%s') AS dataPedidoFormatada
-        FROM pedidoconfirmaintegracao
+        SELECT
+          id,
+          id AS codigo,
+          data_hora AS dataHora,
+          DATE_FORMAT(data_hora, '%Y-%m-%d %H:%i:%s') AS dataPedidoFormatada,
+          rastreio,
+          integradora,
+          username,
+          pedido_integrador AS pedidoIntegrador,
+          pedido_integrador AS pedidoIntegradora,
+          cotacao_integrador AS cotacaoIntegrador,
+          pedido_cliente AS pedidoCliente,
+          cnpj_cliente AS cnpjCliente,
+          cnpj_cliente AS CnpjCliente,
+          cnpj_distribuidor AS cnpjDistribuidor,
+          cnpj_distribuidor AS CnpjDistribuidor,
+          id_campanha AS idCampanha,
+          id_campanha AS IdCampanha,
+          id_ol AS idOl,
+          id_ol AS IdOL,
+          itens,
+          status,
+          motivo,
+          mensagem,
+          numero_carrinho AS numeroCarrinho,
+          numero_carrinho AS numeroCarrinhoDeCompras
+        FROM integracao_pedido_evento
         ${whereSql}
-        ORDER BY codigo DESC
+        ORDER BY data_hora DESC, id DESC
         LIMIT ? OFFSET ?
       `,
       [...params, limit, offset]
@@ -2338,6 +2368,7 @@ app.get('/pedidos', async (req, res) => {
       success: true,
       data: rows,
       meta: {
+        origem: 'integracao_pedido_evento',
         page,
         limit,
         total: totalRows[0]?.total || 0,
@@ -2345,25 +2376,124 @@ app.get('/pedidos', async (req, res) => {
       },
     });
   } catch (error) {
-    return erroResponse(res, 500, 'Erro ao buscar pedidos', error);
+    if (error?.code !== 'ER_NO_SUCH_TABLE') {
+      return erroResponse(res, 500, 'Erro ao buscar eventos de pedidos', error);
+    }
+
+    try {
+      const { page, limit, offset } = parsePagination(req, 20, 200);
+      const params = [];
+      const where = [];
+      const datas = filtrosData(req, 'dataPedido');
+
+      if (req.query.search) {
+        const like = `%${req.query.search}%`;
+        where.push('(numeroCarrinhoDeCompras LIKE ? OR CnpjDistribuidor LIKE ? OR CnpjCliente LIKE ? OR IdCampanha LIKE ? OR NomeCampanha LIKE ? OR pedidoIntegradora LIKE ? OR integradora LIKE ?)');
+        params.push(like, like, like, like, like, like, like);
+      }
+
+      if (req.query.campanha) {
+        where.push('IdCampanha = ?');
+        params.push(req.query.campanha);
+      }
+
+      if (req.query.cnpj) {
+        where.push('(CnpjCliente LIKE ? OR CnpjDistribuidor LIKE ?)');
+        params.push(`%${req.query.cnpj}%`, `%${req.query.cnpj}%`);
+      }
+
+      if (req.query.integradora) {
+        where.push('integradora = ?');
+        params.push(req.query.integradora);
+      }
+
+      where.push(...datas.where);
+      params.push(...datas.params);
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+      const [totalRows] = await queryComTimeout(`SELECT COUNT(*) AS total FROM pedidoconfirmaintegracao ${whereSql}`, params);
+      const [rows] = await queryComTimeout(
+        `
+          SELECT codigo, numeroCarrinhoDeCompras, CnpjDistribuidor, CnpjCliente, IdCampanha, NomeCampanha, pedidoIntegradora, integradora, dataPedido, DATE_FORMAT(dataPedido, '%Y-%m-%d %H:%i:%s') AS dataPedidoFormatada, 'INSERIDO' AS status
+          FROM pedidoconfirmaintegracao
+          ${whereSql}
+          ORDER BY codigo DESC
+          LIMIT ? OFFSET ?
+        `,
+        [...params, limit, offset]
+      );
+
+      return res.json({
+        success: true,
+        data: rows,
+        meta: {
+          origem: 'pedidoconfirmaintegracao',
+          page,
+          limit,
+          total: totalRows[0]?.total || 0,
+          totalPages: Math.max(1, Math.ceil((totalRows[0]?.total || 0) / limit)),
+        },
+      });
+    } catch (fallbackError) {
+      return erroResponse(res, 500, 'Erro ao buscar pedidos', fallbackError);
+    }
   }
 });
 
 app.get('/pedidos/:codigo', async (req, res) => {
   try {
-    const [rows] = await queryComTimeout('SELECT * FROM pedidoconfirmaintegracao WHERE codigo = ? LIMIT 1', [
-      req.params.codigo,
-    ]);
+    const [rows] = await queryComTimeout(
+      `
+        SELECT
+          id,
+          id AS codigo,
+          data_hora AS dataHora,
+          DATE_FORMAT(data_hora, '%Y-%m-%d %H:%i:%s') AS dataPedidoFormatada,
+          rastreio,
+          integradora,
+          username,
+          pedido_integrador AS pedidoIntegrador,
+          pedido_integrador AS pedidoIntegradora,
+          cotacao_integrador AS cotacaoIntegrador,
+          pedido_cliente AS pedidoCliente,
+          cnpj_cliente AS cnpjCliente,
+          cnpj_cliente AS CnpjCliente,
+          cnpj_distribuidor AS cnpjDistribuidor,
+          cnpj_distribuidor AS CnpjDistribuidor,
+          id_campanha AS idCampanha,
+          id_campanha AS IdCampanha,
+          id_ol AS idOl,
+          id_ol AS IdOL,
+          itens,
+          status,
+          motivo,
+          mensagem,
+          numero_carrinho AS numeroCarrinho,
+          numero_carrinho AS numeroCarrinhoDeCompras,
+          payload_recebido AS payloadRecebido,
+          payload_sigrede AS payloadSigrede,
+          payload_retorno AS payloadRetorno
+        FROM integracao_pedido_evento
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [req.params.codigo]
+    );
 
-    return res.json({
-      success: true,
-      data: rows[0] || null,
-    });
+    return res.json({ success: true, data: rows[0] || null });
   } catch (error) {
-    return erroResponse(res, 500, 'Erro ao buscar detalhe do pedido', error);
+    if (error?.code !== 'ER_NO_SUCH_TABLE') {
+      return erroResponse(res, 500, 'Erro ao buscar detalhe do evento do pedido', error);
+    }
+
+    try {
+      const [rows] = await queryComTimeout('SELECT *, \'INSERIDO\' AS status FROM pedidoconfirmaintegracao WHERE codigo = ? LIMIT 1', [req.params.codigo]);
+      return res.json({ success: true, data: rows[0] || null });
+    } catch (fallbackError) {
+      return erroResponse(res, 500, 'Erro ao buscar detalhe do pedido', fallbackError);
+    }
   }
 });
-
 
 
 /* =========================
@@ -2383,7 +2513,7 @@ app.get('/logs', async (req, res) => {
     const arquivos = (await listarArquivosBucketCached({ force })).slice(0, 100).map((arquivo) => ({
       tipo: 'ARQUIVO_GERADO',
       status: 'SUCESSO',
-      descricao: `Arquivo ${arquivo.nomeArquivo} disponível no bucket`,
+      descricao: `Arquivo ${arquivo.nomeArquivo} disponÃƒÂ­vel no bucket`,
       origem: 'BUCKET',
       pedidoIntegrador: null,
       campanha: arquivo.campanha,
@@ -2621,7 +2751,7 @@ app.get('/debug/colunas/:tabela', async (req, res) => {
     const tabelasPermitidas = ['pedidoconfirmaintegracao', 'criafilecampanha', 'log_integracao_pedidos'];
 
     if (!tabelasPermitidas.includes(req.params.tabela)) {
-      return erroResponse(res, 400, 'Tabela não permitida');
+      return erroResponse(res, 400, 'Tabela nÃƒÂ£o permitida');
     }
 
     const [rows] = await queryComTimeout(`SHOW COLUMNS FROM ${req.params.tabela}`);

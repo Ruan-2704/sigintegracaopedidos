@@ -31,7 +31,7 @@ export class LogsComponent implements OnInit {
   itensPorPagina = 20;
   totalRegistros = 0;
   totalPaginas = 1;
-  abaAtiva: 'operacionais' | 'pedidos-api' | 'cron' | 'auditoria' = 'operacionais';
+  abaAtiva: 'operacionais' | 'pedidos-api' | 'cron' | 'auditoria' = 'pedidos-api';
   logsCron: any[] = [];
   logsCompletosAbertos: { [key: string]: boolean } = {};
   carregandoLogsCron = false;
