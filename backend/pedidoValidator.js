@@ -21,6 +21,48 @@ function isPositiveNumber(value) {
   return Number.isFinite(n) && n > 0;
 }
 
+function normalizarTexto(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function rotuloPrazo(codigo) {
+  const texto = cleanText(codigo);
+  if (texto === '1') return 'a vista';
+  if (texto === '2') return 'a prazo';
+  return texto || '-';
+}
+
+function inferirCodigoPrazoCampanha(campanha = {}) {
+  const entradas = Object.entries(campanha || {});
+  const candidatos = entradas
+    .filter(([key]) => /prazo|condicao|pagamento|forma|tipo/i.test(key))
+    .map(([key, value]) => `${key}: ${value}`)
+    .concat([campanha.OPL_DESCRICAO, campanha.DESCRICAO, campanha.NOME].filter(Boolean));
+
+  const texto = normalizarTexto(candidatos.join(' '));
+
+  if (/\b(a\s*vista|avista|vista)\b/.test(texto)) {
+    return {
+      codigo: '1',
+      descricao: 'a vista',
+      origem: candidatos.filter(Boolean).slice(0, 3),
+    };
+  }
+
+  if (/\b(prazo|mensal|boleto|parcel|faturad)\b/.test(texto)) {
+    return {
+      codigo: '2',
+      descricao: 'a prazo',
+      origem: candidatos.filter(Boolean).slice(0, 3),
+    };
+  }
+
+  return null;
+}
+
 function safeDbName(name) {
   const db = String(name || '').trim().toLowerCase();
 
@@ -141,8 +183,8 @@ function validateStructure(normalized) {
     ['cnpjDistribuidor', 'CNPJ do distribuidor usado para localizar o fornecedor.'],
     ['cnpjCliente', 'CNPJ da loja usado para conferir a farmácia.'],
     ['idCampanha', 'Código da campanha/OL enviado como OPL_CODIGO.'],
-    ['idOL', 'No Java atual, esse campo é enviado como FAR_CODIGO para criar o rascunho.'],
-    ['codigoPrazoCd', 'Condição/método de pagamento enviada pela integradora.'],
+    ['idOL', 'Codigo da operacao logistica/OL usado no contexto da integracao.'],
+    ['codigoPrazoCd', 'Informe a condicao de pagamento: 1 para a vista ou 2 para a prazo. Com banco ativo, o validador tenta sugerir pela campanha.'],
   ];
 
   for (const [field, help] of requiredInfo) {
@@ -198,17 +240,6 @@ function validateStructure(normalized) {
     return issues;
   }
 
-  if (normalized.produtos.length > 1) {
-    pushIssue(
-      issues,
-      'aviso',
-      'API_UTILIZA_PRIMEIRO_PRODUTO',
-      'produtos',
-      'A API Java atual usa principalmente produtos[0] na criação do rascunho e no retorno gravado.',
-      'Valide se o comportamento de enviar apenas o primeiro produto é realmente o esperado.'
-    );
-  }
-
   normalized.produtos.forEach((produto, index) => {
     const prefix = `produtos[${index}]`;
 
@@ -237,11 +268,11 @@ function validateStructure(normalized) {
     if (isBlank(produto.ean)) {
       pushIssue(
         issues,
-        'aviso',
+        'erro',
         'PRODUTO_SEM_EAN',
         `${prefix}.EAN`,
-        'EAN não informado.',
-        'Não costuma impedir o rascunho, mas dificulta auditoria/conferência.'
+        'EAN nao informado.',
+        'Informe o codigo de barras/EAN do produto para permitir conferencia e sugestao do codigoProduto correto.'
       );
     }
 
@@ -333,7 +364,7 @@ async function validateDatabase(pool, normalized, options = {}) {
     });
   };
 
-  let farmaciaPorCodigo = null;
+  let farmaciaCliente = null;
 
   if (cnpjCliente.length === 14) {
     const farmacia = await querySafe(
@@ -355,6 +386,8 @@ async function validateDatabase(pool, normalized, options = {}) {
       farmacia.error
     );
 
+    farmaciaCliente = farmacia.rows[0] || null;
+
     if (farmacia.ok && farmacia.rows.length === 0) {
       pushIssue(
         issues,
@@ -368,70 +401,11 @@ async function validateDatabase(pool, normalized, options = {}) {
     }
   }
 
-  if (idOL) {
-    const farmaciaCodigo = await querySafe(
-      pool,
-      `
-      SELECT FAR_CODIGO, FAR_NOME, FAR_NOME_FANTASIA, FAR_CNPJ, FAR_UF, FAR_ATIVO
-      FROM \`${rede}\`.farmacias
-      WHERE FAR_CODIGO = ?
-      LIMIT 5
-      `,
-      [idOL]
-    );
-
-    farmaciaPorCodigo = farmaciaCodigo.rows[0] || null;
-
-    addCheck(
-      'Farmácia por idOL/FAR_CODIGO',
-      farmaciaCodigo.ok && farmaciaCodigo.rows.length > 0,
-      farmaciaCodigo.rows.length
-        ? 'idOL localizado como FAR_CODIGO.'
-        : 'idOL não localizado como FAR_CODIGO.',
-      farmaciaCodigo.rows,
-      farmaciaCodigo.error
-    );
-
-    if (farmaciaCodigo.ok && farmaciaCodigo.rows.length === 0) {
-      pushIssue(
-        issues,
-        'erro',
-        'IDOL_FAR_CODIGO_NAO_ENCONTRADO',
-        'informacoes.idOL',
-        'O campo idOL não corresponde a uma farmácia/FAR_CODIGO existente.',
-        'No Java atual, idOL é enviado como farCodigo para criar rascunho. Revise o idOL.',
-        { rede, idOL }
-      );
-    }
-
-    if (farmaciaCodigo.ok && farmaciaCodigo.rows.length > 0 && cnpjCliente.length === 14) {
-      const cnpjFarmacia = onlyDigits(farmaciaCodigo.rows[0].FAR_CNPJ);
-
-      if (cnpjFarmacia !== cnpjCliente) {
-        pushIssue(
-          issues,
-          'erro',
-          'IDOL_NAO_BATE_COM_CNPJ',
-          'informacoes.idOL',
-          'O idOL/FAR_CODIGO informado pertence a outra farmácia.',
-          'Revise se idOL e cnpjCliente pertencem à mesma loja.',
-          {
-            rede,
-            idOL,
-            cnpjClientePayload: cnpjCliente,
-            cnpjFarmaciaEncontrada: cnpjFarmacia,
-            farmaciaEncontrada: farmaciaCodigo.rows[0],
-          }
-        );
-      }
-    }
-  }
-
   if (idCampanha) {
     const campanha = await querySafe(
       pool,
       `
-      SELECT OPL_CODIGO, OPL_DESCRICAO, OPL_ATIVO, OPL_DT_INICIO, OPL_DT_FIM, UTILIZA_EDI, CODIGO_REDE
+      SELECT *
       FROM \`${rede}\`.operacoes_logisticas
       WHERE OPL_CODIGO = ?
       LIMIT 5
@@ -461,6 +435,32 @@ async function validateDatabase(pool, normalized, options = {}) {
 
     if (campanha.ok && campanha.rows.length > 0) {
       const camp = campanha.rows[0];
+      const prazoCampanha = inferirCodigoPrazoCampanha(camp);
+      const codigoPrazoInformado = cleanText(info.codigoPrazoCd);
+
+      if (prazoCampanha && !codigoPrazoInformado) {
+        pushIssue(
+          issues,
+          'erro',
+          'CODIGO_PRAZO_NAO_INFORMADO',
+          'informacoes.codigoPrazoCd',
+          `codigoPrazoCd nao foi informado. Pela campanha, o esperado parece ser ${prazoCampanha.codigo} (${prazoCampanha.descricao}).`,
+          `Preencha informacoes.codigoPrazoCd com ${prazoCampanha.codigo}. Regra geral: 1 = a vista, 2 = a prazo.`,
+          { rede, idCampanha, valorSugerido: prazoCampanha.codigo, prazoCampanha }
+        );
+      }
+
+      if (prazoCampanha && codigoPrazoInformado && codigoPrazoInformado !== prazoCampanha.codigo) {
+        pushIssue(
+          issues,
+          'erro',
+          'CODIGO_PRAZO_DIVERGENTE',
+          'informacoes.codigoPrazoCd',
+          `codigoPrazoCd informado (${codigoPrazoInformado} - ${rotuloPrazo(codigoPrazoInformado)}) parece diferente da campanha (${prazoCampanha.codigo} - ${prazoCampanha.descricao}).`,
+          `Confirme a regra da campanha e, se estiver correto, ajuste codigoPrazoCd para ${prazoCampanha.codigo}.`,
+          { rede, idCampanha, valorAtual: codigoPrazoInformado, valorSugerido: prazoCampanha.codigo, prazoCampanha }
+        );
+      }
 
       if (String(camp.OPL_ATIVO) !== '1') {
         pushIssue(
@@ -493,7 +493,7 @@ async function validateDatabase(pool, normalized, options = {}) {
     }
   }
 
-  if (idCampanha && idOL) {
+  if (idCampanha && farmaciaCliente?.FAR_CODIGO) {
     const farmaciaOpl = await querySafe(
       pool,
       `
@@ -503,15 +503,15 @@ async function validateDatabase(pool, normalized, options = {}) {
         AND fol.OPL_CODIGO = ?
       LIMIT 5
       `,
-      [idOL, idCampanha]
+      [farmaciaCliente.FAR_CODIGO, idCampanha]
     );
 
     addCheck(
-      'Loja vinculada à campanha',
+      'Loja/CNPJ vinculada a campanha',
       farmaciaOpl.ok && farmaciaOpl.rows.length > 0,
       farmaciaOpl.rows.length
-        ? 'Loja vinculada à campanha.'
-        : 'Loja não está vinculada à campanha.',
+        ? 'Loja/CNPJ vinculada a campanha.'
+        : 'Loja/CNPJ nao esta vinculada a campanha.',
       farmaciaOpl.rows,
       farmaciaOpl.error
     );
@@ -521,10 +521,10 @@ async function validateDatabase(pool, normalized, options = {}) {
         issues,
         'erro',
         'FARMACIA_OPL_NAO_ENCONTRADA',
-        'informacoes.idOL',
-        'A loja/idOL não está vinculada à campanha informada.',
-        'Revise idOL e idCampanha. Esse caso pode retornar FAR_OPL_NOT_FOUND na API SIG.',
-        { rede, idOL, idCampanha }
+        'informacoes.cnpjCliente',
+        'A farmacia do cnpjCliente nao esta vinculada a OL/campanha informada.',
+        'Revise cnpjCliente e idCampanha/OL. Esse caso pode retornar FAR_OPL_NOT_FOUND na API SIG.',
+        { rede, cnpjCliente, farCodigo: farmaciaCliente.FAR_CODIGO, idCampanha }
       );
     }
   }
@@ -602,6 +602,108 @@ async function validateDatabase(pool, normalized, options = {}) {
     }
   }
 
+  const produtosComEan = normalized.produtos
+    .map((produto) => ({ ...produto, eanLimpo: onlyDigits(produto.ean) }))
+    .filter((produto) => produto.eanLimpo);
+
+  if (produtosComEan.length) {
+    const eans = [...new Set(produtosComEan.map((p) => p.eanLimpo))];
+    const placeholders = eans.map(() => '?').join(',');
+    const params = idCampanha
+      ? [idCampanha, ...eans]
+      : [null, ...eans];
+
+    const produtosPorEan = await querySafe(
+      pool,
+      `
+      SELECT
+        m.MED_CODIGO,
+        m.MED_NOME,
+        m.MED_COD_BARRAS,
+        m.MED_ATIVO,
+        mo.OPL_CODIGO
+      FROM \`${rede}\`.medicamentos m
+      LEFT JOIN \`${rede}\`.medicamentos_opl mo
+        ON mo.MED_CODIGO = m.MED_CODIGO
+        AND mo.OPL_CODIGO = ?
+      WHERE REPLACE(REPLACE(REPLACE(m.MED_COD_BARRAS, '.', ''), '/', ''), '-', '') IN (${placeholders})
+      LIMIT 500
+      `,
+      params
+    );
+
+    addCheck(
+      'Produtos localizados por EAN',
+      produtosPorEan.ok && produtosPorEan.rows.length > 0,
+      produtosPorEan.rows.length
+        ? `${produtosPorEan.rows.length} produto(s) localizados pelo EAN.`
+        : 'Nenhum produto foi localizado pelos EANs informados.',
+      produtosPorEan.rows,
+      produtosPorEan.error
+    );
+
+    if (produtosPorEan.ok) {
+      const porEan = new Map(
+        produtosPorEan.rows.map((row) => [onlyDigits(row.MED_COD_BARRAS), row])
+      );
+
+      produtosComEan.forEach((produto) => {
+        const encontrado = porEan.get(produto.eanLimpo);
+        const prefix = `produtos[${produto.index}]`;
+
+        if (!encontrado) {
+          pushIssue(
+            issues,
+            'erro',
+            'PRODUTO_EAN_NAO_LOCALIZADO',
+            `${prefix}.EAN`,
+            `EAN ${produto.eanLimpo} nao foi localizado no cadastro de medicamentos.`,
+            'Revise o EAN informado ou cadastre/vincule o produto correto na rede.',
+            { rede, ean: produto.eanLimpo, idCampanha }
+          );
+          return;
+        }
+
+        const codigoEncontrado = cleanText(encontrado.MED_CODIGO);
+        const codigoInformado = cleanText(produto.codigoProduto);
+
+        if (isBlank(produto.codigoProduto)) {
+          pushIssue(
+            issues,
+            'erro',
+            'PRODUTO_CODIGO_SUGERIDO_PELO_EAN',
+            `${prefix}.codigoProduto`,
+            `Produto sem codigoProduto. Pelo EAN ${produto.eanLimpo}, o codigoProduto correto parece ser ${codigoEncontrado}.`,
+            `Preencha produtos[${produto.index}].codigoProduto com ${codigoEncontrado}.`,
+            { rede, ean: produto.eanLimpo, codigoProdutoSugerido: codigoEncontrado, produto: encontrado }
+          );
+        } else if (codigoInformado !== codigoEncontrado) {
+          pushIssue(
+            issues,
+            'erro',
+            'PRODUTO_CODIGO_DIVERGE_DO_EAN',
+            `${prefix}.codigoProduto`,
+            `codigoProduto ${codigoInformado} nao confere com o EAN ${produto.eanLimpo}. Pelo cadastro, o correto parece ser ${codigoEncontrado}.`,
+            `Ajuste codigoProduto para ${codigoEncontrado} ou revise o EAN enviado.`,
+            { rede, ean: produto.eanLimpo, codigoProdutoAtual: codigoInformado, codigoProdutoSugerido: codigoEncontrado, produto: encontrado }
+          );
+        }
+
+        if (idCampanha && !encontrado.OPL_CODIGO) {
+          pushIssue(
+            issues,
+            'erro',
+            'PRODUTO_EAN_FORA_DA_CAMPANHA',
+            `${prefix}.EAN`,
+            `Produto ${codigoEncontrado} localizado pelo EAN ${produto.eanLimpo}, mas nao esta vinculado a campanha ${idCampanha}.`,
+            'Inclua o produto na campanha ou gere novamente o arquivo da campanha com esse medicamento.',
+            { rede, ean: produto.eanLimpo, codigoProduto: codigoEncontrado, idCampanha }
+          );
+        }
+      });
+    }
+  }
+
   const produtosValidos = normalized.produtos.filter((p) => !isBlank(p.codigoProduto));
 
   if (idCampanha && produtosValidos.length) {
@@ -671,31 +773,6 @@ async function validateDatabase(pool, normalized, options = {}) {
         }
       });
 
-      if (farmaciaPorCodigo?.FAR_UF) {
-        produtosCampanha.rows.forEach((row) => {
-          if (
-            row.UF_CODIGO &&
-            String(row.UF_CODIGO).length === 2 &&
-            String(row.UF_CODIGO).toUpperCase() !== String(farmaciaPorCodigo.FAR_UF).toUpperCase()
-          ) {
-            pushIssue(
-              issues,
-              'aviso',
-              'UF_PRODUTO_DIFERENTE_DA_LOJA',
-              'produtos.codigoProduto',
-              `Produto ${row.MED_CODIGO} tem UF ${row.UF_CODIGO}, mas a loja é ${farmaciaPorCodigo.FAR_UF}.`,
-              'Confirme se a campanha permite essa UF para a loja. Esse tipo de caso pode gerar UF_MISMATCH.',
-              {
-                rede,
-                idCampanha,
-                codigoProduto: row.MED_CODIGO,
-                ufProduto: row.UF_CODIGO,
-                ufLoja: farmaciaPorCodigo.FAR_UF,
-              }
-            );
-          }
-        });
-      }
     }
   }
 
@@ -776,13 +853,8 @@ function montarProximosPassos(issues) {
   if (codes.has('PRODUTOS_AUSENTES')) {
     passos.push('Solicitar novo payload à integradora: a API Java quebra com IndexOutOfBoundsException se produtos vier vazio.');
   }
-
-  if (codes.has('IDOL_FAR_CODIGO_NAO_ENCONTRADO') || codes.has('IDOL_NAO_BATE_COM_CNPJ')) {
-    passos.push('Validar idOL: no Java atual, ele é enviado como FAR_CODIGO para criar o rascunho.');
-  }
-
   if (codes.has('FARMACIA_OPL_NAO_ENCONTRADA')) {
-    passos.push('Validar vínculo da loja com a campanha em farmacias_opl.');
+    passos.push('Validar vinculo da farmacia do cnpjCliente com a OL/campanha em farmacias_opl.');
   }
 
   if (codes.has('FORNECEDOR_CAMPANHA_NAO_ENCONTRADO')) {

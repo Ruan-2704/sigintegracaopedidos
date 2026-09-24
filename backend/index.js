@@ -193,19 +193,19 @@ function calcularNovasLinhas(linhasAnteriores = [], linhasAtuais = []) {
 const SERVICOS = {
   geracao: {
     chave: 'geracao',
-    nome: 'GeraÃƒÂ§ÃƒÂ£o de arquivos',
+    nome: 'Geracao de arquivos',
     script: process.env.SCRIPT_GERACAO || 'executa_script.sh',
     porta: Number(process.env.GERACAO_PORT || 8080),
   },
   exclusao: {
     chave: 'exclusao',
-    nome: 'ExclusÃƒÂ£o de arquivos',
+    nome: 'Exclusao de arquivos',
     script: process.env.SCRIPT_EXCLUSAO || 'executa_exclusao_script.sh',
     porta: Number(process.env.EXCLUSAO_PORT || 8081),
   },
   pedidos: {
     chave: 'pedidos',
-    nome: 'API inserÃƒÂ§ÃƒÂ£o de pedidos',
+    nome: 'API insercao de pedidos',
     jar: process.env.JAR_PEDIDOS || DEFAULT_PEDIDOS_JAR,
     errorLogFile: process.env.LOG_PEDIDOS_ERROS_FILE || DEFAULT_PEDIDOS_LOG,
     porta: Number(process.env.PEDIDOS_PORT || 8080),
@@ -255,7 +255,7 @@ function contextoLogServico(req, chave) {
   };
 }
 
-function timeoutPromise(promise, ms, label = 'operaÃƒÂ§ÃƒÂ£o') {
+function timeoutPromise(promise, ms, label = 'operaÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o') {
   let timer;
 
   const limite = new Promise((_, reject) => {
@@ -324,7 +324,7 @@ async function safePidsServico(chave) {
     return Array.isArray(pids) ? pids : [];
   } catch (error) {
     if (!erroSshTransitorio(error) || debugStatusSshAtivo()) {
-      console.warn(`Status do serviÃƒÂ§o ${chave} indisponÃƒÂ­vel:`, error.message);
+      console.warn(`Status do serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o ${chave} indisponÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­vel:`, error.message);
     }
     return [];
   }
@@ -382,7 +382,7 @@ async function atualizarStatusServicos({ detectarQueda = true } = {}) {
   servidor: servidorServico('geracao'),
   tipo: 'job',
   online: geracaoPids.length > 0,
-  statusOperacional: geracaoPids.length > 0 ? 'executando' : 'aguardando execuÃƒÂ§ÃƒÂ£o',
+  statusOperacional: geracaoPids.length > 0 ? 'executando' : 'aguardando execuÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o',
   pids: geracaoPids,
   target: 'files',
 },
@@ -393,7 +393,7 @@ async function atualizarStatusServicos({ detectarQueda = true } = {}) {
   servidor: servidorServico('exclusao'),
   tipo: 'job',
   online: exclusaoPids.length > 0,
-  statusOperacional: exclusaoPids.length > 0 ? 'executando' : 'aguardando execuÃƒÂ§ÃƒÂ£o',
+  statusOperacional: exclusaoPids.length > 0 ? 'executando' : 'aguardando execuÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o',
   pids: exclusaoPids,
   target: 'files',
 },
@@ -426,10 +426,10 @@ if (detectarQueda) {
         servico: data[key].nome,
         tipo: 'SERVICO_OFFLINE',
         severidade: 'ALERTA',
-        mensagem: `O serviÃƒÂ§o ${data[key].nome} ficou offline.`,
+        mensagem: `O servico ${data[key].nome} ficou offline.`,
         servidor: data[key].servidor,
         porta: data[key].porta,
-        assunto: `Ã°Å¸Å¡Â¨ ServiÃƒÂ§o offline - ${data[key].nome}`,
+        assunto: `Servico offline - ${data[key].nome}`,
       }).catch((error) => {
         console.error(`Falha ao enviar alerta offline ${key}:`, error.message);
       });
@@ -461,7 +461,7 @@ function atualizarStatusServicosEmBackground({ detectarQueda = true } = {}) {
 
   statusServicosRefreshPromise = atualizarStatusServicos({ detectarQueda })
     .catch((error) => {
-      console.error('Falha ao atualizar cache de status dos serviÃƒÂ§os:', error.message);
+      console.error('Falha ao atualizar cache de status dos serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§os:', error.message);
       return null;
     })
     .finally(() => {
@@ -606,7 +606,7 @@ function authMiddleware(req, res, next) {
   const payload = validarToken(token);
 
   if (!payload) {
-    return erroResponse(res, 401, 'Acesso nÃƒÂ£o autorizado. FaÃƒÂ§a login novamente.');
+    return erroResponse(res, 401, 'Acesso nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o autorizado. FaÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§a login novamente.');
   }
 
   req.usuario = payload;
@@ -630,7 +630,7 @@ app.post('/auth/login', (req, res) => {
   const tokenInformado = String(req.body?.token || req.body?.password || '').trim();
 
   if (!tokenInformado || tokenInformado !== PANEL_TOKEN) {
-    return erroResponse(res, 401, 'Token invÃƒÂ¡lido.');
+    return erroResponse(res, 401, 'Token invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido.');
   }
 
   const now = Math.floor(Date.now() / 1000);
@@ -713,17 +713,17 @@ function validarServicoScript(chave) {
   const servico = SERVICOS[chave];
 
   if (!servico || !servico.script) {
-    throw new Error('ServiÃƒÂ§o invÃƒÂ¡lido para execuÃƒÂ§ÃƒÂ£o de script.');
+    throw new Error('ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido para execuÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o de script.');
   }
 
   const scriptPath = path.join(SIG_FOLDER, servico.script);
 
   if (!fs.existsSync(SIG_FOLDER)) {
-    throw new Error(`DiretÃƒÂ³rio nÃƒÂ£o encontrado: ${SIG_FOLDER}`);
+    throw new Error(`DiretÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³rio nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o encontrado: ${SIG_FOLDER}`);
   }
 
   if (!fs.existsSync(scriptPath)) {
-    throw new Error(`Script nÃƒÂ£o encontrado: ${scriptPath}`);
+    throw new Error(`Script nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o encontrado: ${scriptPath}`);
   }
 
   return { servico, scriptPath };
@@ -736,7 +736,7 @@ function iniciarScript(chave) {
     const atual = processos.get(chave);
 
     if (!atual.killed) {
-      throw new Error(`${servico.nome} jÃƒÂ¡ estÃƒÂ¡ em execuÃƒÂ§ÃƒÂ£o pelo painel. PID: ${atual.pid}`);
+      throw new Error(`${servico.nome} jÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ estÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ em execuÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o pelo painel. PID: ${atual.pid}`);
     }
   }
 
@@ -944,7 +944,7 @@ app.get('/health', async (req, res) => {
 });
 
 /* =========================
-   OPERACIONAL / SERVIÃƒâ€¡OS
+   OPERACIONAL / SERVIÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¡OS
 ========================= */
 
 app.get('/servicos/status', authMiddleware, async (req, res) => {
@@ -966,7 +966,7 @@ app.get('/servicos/status', authMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
-    return erroResponse(res, 500, 'Erro ao consultar status dos serviÃƒÂ§os', error);
+    return erroResponse(res, 500, 'Erro ao consultar status dos serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§os', error);
   }
 });
 
@@ -980,14 +980,14 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
       req,
       acao: 'INICIAR_SERVICO',
       alvo: 'geracao',
-      mensagem: 'GeraÃƒÂ§ÃƒÂ£o iniciada pelo painel.',
+      mensagem: 'GeraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada pelo painel.',
       detalhe: result,
     });
     registrarInicioServico(req, 'geracao', result);
 
     return res.json({
       success: true,
-      message: 'GeraÃƒÂ§ÃƒÂ£o iniciada com sucesso',
+      message: 'GeraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada com sucesso',
       data: result,
     });
   } catch (error) {
@@ -996,7 +996,7 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
       acao: 'INICIAR_SERVICO',
       alvo: 'geracao',
       status: 'ERRO',
-      mensagem: 'Erro ao iniciar geraÃƒÂ§ÃƒÂ£o.',
+      mensagem: 'Erro ao iniciar geraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o.',
       detalhe: error.stack || error.message,
     });
     registrarErroInicioServico(req, 'geracao', error);
@@ -1004,7 +1004,7 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao iniciar geraÃƒÂ§ÃƒÂ£o',
+      message: 'Erro ao iniciar geraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o',
       error: error.message,
     });
   }
@@ -1020,14 +1020,14 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
       req,
       acao: 'INICIAR_SERVICO',
       alvo: 'geracao',
-      mensagem: 'GeraÃƒÂ§ÃƒÂ£o iniciada pelo painel.',
+      mensagem: 'GeraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada pelo painel.',
       detalhe: result,
     });
     registrarInicioServico(req, 'geracao', result);
 
     return res.json({
       success: true,
-      message: 'GeraÃƒÂ§ÃƒÂ£o iniciada com sucesso',
+      message: 'GeraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada com sucesso',
       data: result,
     });
   } catch (error) {
@@ -1036,7 +1036,7 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
       acao: 'INICIAR_SERVICO',
       alvo: 'geracao',
       status: 'ERRO',
-      mensagem: 'Erro ao iniciar geraÃƒÂ§ÃƒÂ£o.',
+      mensagem: 'Erro ao iniciar geraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o.',
       detalhe: error.stack || error.message,
     });
     registrarErroInicioServico(req, 'geracao', error);
@@ -1044,7 +1044,7 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao iniciar geraÃƒÂ§ÃƒÂ£o',
+      message: 'Erro ao iniciar geraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o',
       error: error.message,
     });
   }
@@ -1060,14 +1060,14 @@ app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
       req,
       acao: 'INICIAR_SERVICO',
       alvo: 'exclusao',
-      mensagem: 'ExclusÃƒÂ£o iniciada pelo painel.',
+      mensagem: 'ExclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada pelo painel.',
       detalhe: result,
     });
     registrarInicioServico(req, 'exclusao', result);
 
     return res.json({
       success: true,
-      message: 'ExclusÃƒÂ£o iniciada com sucesso',
+      message: 'ExclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada com sucesso',
       data: result,
     });
   } catch (error) {
@@ -1076,14 +1076,14 @@ app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
       acao: 'INICIAR_SERVICO',
       alvo: 'exclusao',
       status: 'ERRO',
-      mensagem: 'Erro ao iniciar exclusÃƒÂ£o.',
+      mensagem: 'Erro ao iniciar exclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o.',
       detalhe: error.stack || error.message,
     });
     registrarErroInicioServico(req, 'exclusao', error);
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao iniciar exclusÃƒÂ£o',
+      message: 'Erro ao iniciar exclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o',
       error: error.message,
     });
   }
@@ -1099,14 +1099,14 @@ app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
       req,
       acao: 'INICIAR_SERVICO',
       alvo: 'exclusao',
-      mensagem: 'ExclusÃƒÂ£o iniciada pelo painel.',
+      mensagem: 'ExclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada pelo painel.',
       detalhe: result,
     });
     registrarInicioServico(req, 'exclusao', result);
 
     return res.json({
       success: true,
-      message: 'ExclusÃƒÂ£o iniciada com sucesso',
+      message: 'ExclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada com sucesso',
       data: result,
     });
   } catch (error) {
@@ -1115,14 +1115,14 @@ app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
       acao: 'INICIAR_SERVICO',
       alvo: 'exclusao',
       status: 'ERRO',
-      mensagem: 'Erro ao iniciar exclusÃƒÂ£o.',
+      mensagem: 'Erro ao iniciar exclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o.',
       detalhe: error.stack || error.message,
     });
     registrarErroInicioServico(req, 'exclusao', error);
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao iniciar exclusÃƒÂ£o',
+      message: 'Erro ao iniciar exclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o',
       error: error.message,
     });
   }
@@ -1212,7 +1212,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
     const servico = SERVICOS[chave];
 
     if (!servico) {
-      return erroResponse(res, 400, 'ServiÃƒÂ§o invÃƒÂ¡lido.');
+      return erroResponse(res, 400, 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido.');
     }
 
     const target = alvoServico(chave);
@@ -1231,7 +1231,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
 
     escreverLog(
       chave,
-      `Parada solicitada pelo painel. ServiÃƒÂ§o=${chave}, target=${target}, porta=${servico.porta}, PIDs antes=${
+      `Parada solicitada pelo painel. ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o=${chave}, target=${target}, porta=${servico.porta}, PIDs antes=${
         pidsAntes.join(', ') || '-'
       }, PIDs encerrados=${(pidsEncerrados || []).join(', ') || '-'}, PIDs depois=${
         pidsDepois.join(', ') || '-'
@@ -1244,7 +1244,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       mensagem: pidsAntes.length
         ? pidsDepois.length
           ? 'Parada solicitada, mas ainda existem processos ativos.'
-          : 'ServiÃƒÂ§o parado com sucesso.'
+          : 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o parado com sucesso.'
         : 'Nenhum processo ativo encontrado para parar.',
       detalhe: {
         target,
@@ -1262,7 +1262,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       mensagem: pidsAntes.length
         ? pidsDepois.length
           ? 'Parada solicitada, mas ainda existem processos ativos.'
-          : 'ServiÃƒÂ§o parado com sucesso.'
+          : 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o parado com sucesso.'
         : 'Nenhum processo ativo encontrado para parar.',
       detalhe: {
         target,
@@ -1280,13 +1280,13 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
         servico: servico.nome,
         tipo: 'SERVICO_PARADO_MANUALMENTE',
         severidade: 'INFO',
-        mensagem: `ServiÃƒÂ§o ${servico.nome} parado manualmente pelo painel.`,
+        mensagem: `ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o ${servico.nome} parado manualmente pelo painel.`,
         detalhe: `PIDs antes: ${pidsAntes.join(', ') || '-'} | PIDs encerrados: ${
           (pidsEncerrados || []).join(', ') || '-'
         } | PIDs depois: ${pidsDepois.join(', ') || '-'}`,
         servidor: servidorServico(chave),
         porta: servico.porta,
-        assunto: `ServiÃƒÂ§o parado manualmente - ${servico.nome}`,
+        assunto: `ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o parado manualmente - ${servico.nome}`,
       }).catch((error) => {
         console.error('Falha ao registrar/enviar alerta de parada manual:', error.message);
       });
@@ -1297,7 +1297,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       message: pidsAntes.length
         ? pidsDepois.length
           ? 'Parada solicitada, mas ainda existem processos ativos. Aguarde e atualize novamente.'
-          : 'ServiÃƒÂ§o parado com sucesso.'
+          : 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o parado com sucesso.'
         : 'Nenhum processo ativo encontrado para parar.',
       data: {
         servico: chave,
@@ -1315,18 +1315,18 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       acao: 'PARAR_SERVICO',
       alvo: req.params.servico,
       status: 'ERRO',
-      mensagem: 'Erro ao parar serviÃƒÂ§o.',
+      mensagem: 'Erro ao parar serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o.',
       detalhe: error.stack || error.message,
     });
     registrarServicoLogSeguro(eventoServicoPayload(req.params.servico, {
       req,
       tipo: 'PARAR_SERVICO',
       status: 'ERRO',
-      mensagem: 'Erro ao parar serviÃƒÂ§o.',
+      mensagem: 'Erro ao parar serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o.',
       detalhe: error.stack || error.message,
     }));
 
-    return erroResponse(res, 500, 'Erro ao parar serviÃƒÂ§o', error);
+    return erroResponse(res, 500, 'Erro ao parar serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o', error);
   }
 });
 
@@ -1442,7 +1442,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
     } else {
       return res.status(400).json({
         success: false,
-        message: 'ServiÃƒÂ§o invÃƒÂ¡lido',
+        message: 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido',
       });
     }
 
@@ -1454,7 +1454,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
         req,
         tipo: 'CONSULTA_LOG',
         status: 'INFO',
-        mensagem: `Log do serviÃƒÂ§o consultado pelo painel a partir do cache (${limit} linhas).`,
+        mensagem: `Log do serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o consultado pelo painel a partir do cache (${limit} linhas).`,
         detalhe: {
           linhas: cache.content.split('\n').filter(Boolean).length,
           target,
@@ -1491,7 +1491,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
       req,
       tipo: 'CONSULTA_LOG',
       status: detectarErroLog(content) ? 'ALERTA' : 'SUCESSO',
-      mensagem: `Log do serviÃƒÂ§o consultado pelo painel (${limit} linhas).`,
+      mensagem: `Log do serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o consultado pelo painel (${limit} linhas).`,
       detalhe: {
         linhas: content.split('\n').filter(Boolean).length,
         target,
@@ -1524,7 +1524,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: 'Erro ao ler log do serviÃƒÂ§o',
+      message: 'Erro ao ler log do serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o',
       error: error.message,
     });
   }
@@ -1549,7 +1549,7 @@ app.get('/servicos/logs/eventos', authMiddleware, async (req, res) => {
       meta: payload.meta,
     });
   } catch (error) {
-    return erroResponse(res, 500, 'Erro ao buscar eventos dos serviÃƒÂ§os', error);
+    return erroResponse(res, 500, 'Erro ao buscar eventos dos serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§os', error);
   }
 });
 
@@ -1636,13 +1636,13 @@ app.get('/servicos/:servico/logs/stream', async (req, res) => {
   const chave = req.params.servico;
 
   if (!SERVICOS[chave]) {
-    return erroResponse(res, 400, 'ServiÃƒÂ§o invÃƒÂ¡lido.');
+    return erroResponse(res, 400, 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido.');
   }
 
   const scriptName = scriptOuJarServico(chave);
 
   if (!scriptName) {
-    return erroResponse(res, 400, 'ServiÃƒÂ§o sem script ou JAR configurado.');
+    return erroResponse(res, 400, 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o sem script ou JAR configurado.');
   }
 
   const target = targetServicoLog(chave);
@@ -1863,7 +1863,7 @@ app.get('/painel/acoes', authMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
-    return erroResponse(res, 500, 'Erro ao listar aÃƒÂ§ÃƒÂµes do painel', error);
+    return erroResponse(res, 500, 'Erro ao listar aÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âµes do painel', error);
   }
 });
 
@@ -1879,9 +1879,129 @@ const REDES_ALIAS = {
   redefarma: 'RedeFarma',
   redemgfarma: 'Rede MG Farma',
   mercaweb: 'Merca Web',
-  vidafarmacias: 'Vida FarmÃƒÂ¡cias',
+  vidafarmacias: 'Vida Farmacias',
   grupoadmpharma: 'Grupo ADM Pharma',
 };
+
+const VALIDADOR_TABELAS_REFERENCIA = [
+  'farmacias',
+  'operacoes_logisticas',
+  'farmacias_opl',
+  'fornecedores',
+  'fornecedores_participa_operacao_logistica',
+  'medicamentos',
+  'medicamentos_opl',
+];
+
+function onlyDigitsLocal(value) {
+  return String(value ?? '').replace(/\D/g, '');
+}
+
+function schemasValidador() {
+  return Object.keys(REDES_ALIAS);
+}
+
+async function listarMetadadosValidador() {
+  const schemas = schemasValidador();
+  const placeholders = schemas.map(() => '?').join(', ');
+
+  const [rows] = await queryComTimeout(
+    `
+    SELECT TABLE_SCHEMA AS schemaName, TABLE_NAME AS tableName
+    FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA IN (${placeholders})
+    ORDER BY TABLE_SCHEMA, TABLE_NAME
+    `,
+    schemas
+  );
+
+  const tabelasPorSchema = new Map();
+
+  for (const row of rows || []) {
+    const schemaName = row.schemaName;
+    const tableName = row.tableName;
+
+    if (!tabelasPorSchema.has(schemaName)) {
+      tabelasPorSchema.set(schemaName, []);
+    }
+
+    tabelasPorSchema.get(schemaName).push({
+      nome: tableName,
+      referencia: VALIDADOR_TABELAS_REFERENCIA.includes(tableName),
+    });
+  }
+
+  return schemas.map((schema) => ({
+    schema,
+    nome: REDES_ALIAS[schema] || schema,
+    tabelas: tabelasPorSchema.get(schema) || [],
+  }));
+}
+
+async function detectarRedeValidador(payload) {
+  const info = payload?.informacoes || payload || {};
+  const cnpjCliente = onlyDigitsLocal(info.cnpjCliente || info.CnpjCliente || payload?.cnpjCliente || payload?.CnpjCliente);
+  const idCampanha = String(info.idCampanha || info.IdCampanha || payload?.idCampanha || payload?.IdCampanha || '').trim();
+  const schemas = schemasValidador();
+  const candidatos = [];
+
+  for (const schema of schemas) {
+    try {
+      const [rows] = await queryComTimeout(
+        `
+        SELECT
+          (
+            SELECT COUNT(*)
+            FROM \`${schema}\`.farmacias
+            WHERE ? <> ''
+              AND REPLACE(REPLACE(REPLACE(FAR_CNPJ, '.', ''), '/', ''), '-', '') = ?
+          ) AS lojasCnpj,
+          (
+            SELECT COUNT(*)
+            FROM \`${schema}\`.operacoes_logisticas
+            WHERE ? <> ''
+              AND OPL_CODIGO = ?
+          ) AS campanhas
+        `,
+        [cnpjCliente, cnpjCliente, idCampanha, idCampanha]
+      );
+
+      const row = rows?.[0] || {};
+      const lojasCnpj = Number(row.lojasCnpj || 0);
+      const campanhas = Number(row.campanhas || 0);
+      const score = lojasCnpj * 4 + campanhas * 2;
+
+      candidatos.push({
+        schema,
+        nome: REDES_ALIAS[schema] || schema,
+        score,
+        evidencias: {
+          cnpjCliente: lojasCnpj,
+          idCampanha: campanhas,
+        },
+      });
+    } catch (error) {
+      candidatos.push({
+        schema,
+        nome: REDES_ALIAS[schema] || schema,
+        score: 0,
+        erro: error.message,
+        evidencias: {
+          cnpjCliente: 0,
+          idCampanha: 0,
+        },
+      });
+    }
+  }
+
+  candidatos.sort((a, b) => b.score - a.score || a.nome.localeCompare(b.nome));
+
+  return {
+    rede: candidatos[0]?.score > 0 ? candidatos[0].schema : null,
+    nome: candidatos[0]?.score > 0 ? candidatos[0].nome : null,
+    candidatos,
+  };
+}
 
 function agruparPedidosPorRede(rows = []) {
   const map = new Map();
@@ -1961,7 +2081,7 @@ app.get('/dashboard', async (req, res) => {
             base.far_codigo,
             base.loja,
             p.CnpjCliente AS cnpj,
-            COUNT(*) AS total
+            COUNT(DISTINCT p.numeroCarrinhoDeCompras) AS total
           FROM pedidoconfirmaintegracao p
           INNER JOIN (
             SELECT 'redecomprecerto' AS rede_alias, 'Grupo Compre Certo' AS rede_nome, FAR_CODIGO AS far_codigo, FAR_NOME AS loja, FAR_CNPJ AS cnpj
@@ -1992,7 +2112,7 @@ app.get('/dashboard', async (req, res) => {
             FROM mercaweb.farmacias
 
             UNION ALL
-            SELECT 'vidafarmacias', 'Vida FarmÃƒÂ¡cias', FAR_CODIGO, FAR_NOME, FAR_CNPJ
+            SELECT 'vidafarmacias', 'Vida Farmacias', FAR_CODIGO, FAR_NOME, FAR_CNPJ
             FROM vidafarmacias.farmacias
 
             UNION ALL
@@ -2044,12 +2164,12 @@ app.get('/dashboard', async (req, res) => {
       redeLojaPromise,
 
       queryComTimeout(
-        `SELECT COUNT(*) AS total FROM pedidoconfirmaintegracao ${where}`,
+        `SELECT COUNT(DISTINCT numeroCarrinhoDeCompras) AS total FROM pedidoconfirmaintegracao ${where}`,
         params
       ),
 
       queryComTimeout(`
-        SELECT COUNT(*) AS total
+        SELECT COUNT(DISTINCT numeroCarrinhoDeCompras) AS total
         FROM pedidoconfirmaintegracao
         WHERE DATE(dataPedido) = CURDATE()
       `),
@@ -2061,7 +2181,7 @@ app.get('/dashboard', async (req, res) => {
 
       queryComTimeout(
         `
-        SELECT integradora, COUNT(*) AS total
+        SELECT integradora, COUNT(DISTINCT numeroCarrinhoDeCompras) AS total
         FROM pedidoconfirmaintegracao
         ${where}
         GROUP BY integradora
@@ -2196,14 +2316,14 @@ app.get('/arquivos/:nomeArquivo/preview', async (req, res) => {
     const nomeArquivo = decodeURIComponent(req.params.nomeArquivo || '');
 
     if (!nomeArquivo.toLowerCase().endsWith('.json')) {
-      return erroResponse(res, 400, 'Arquivo invÃƒÂ¡lido');
+      return erroResponse(res, 400, 'Arquivo invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido');
     }
 
     const file = storage.bucket(BUCKET_NAME).file(nomeArquivo);
     const [exists] = await file.exists();
 
     if (!exists) {
-      return erroResponse(res, 404, 'Arquivo nÃƒÂ£o encontrado no bucket');
+      return erroResponse(res, 404, 'Arquivo nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o encontrado no bucket');
     }
 
     const [buffer] = await file.download();
@@ -2234,14 +2354,14 @@ app.delete('/arquivos/:nomeArquivo', async (req, res) => {
     const nomeArquivo = decodeURIComponent(req.params.nomeArquivo || '');
 
     if (!nomeArquivo.toLowerCase().endsWith('.json')) {
-      return erroResponse(res, 400, 'Arquivo invÃƒÂ¡lido');
+      return erroResponse(res, 400, 'Arquivo invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido');
     }
 
     const file = storage.bucket(BUCKET_NAME).file(nomeArquivo);
     const [exists] = await file.exists();
 
     if (!exists) {
-      return erroResponse(res, 404, 'Arquivo nÃƒÂ£o encontrado no bucket');
+      return erroResponse(res, 404, 'Arquivo nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o encontrado no bucket');
     }
 
     await file.delete();
@@ -2249,7 +2369,7 @@ app.delete('/arquivos/:nomeArquivo', async (req, res) => {
       req,
       acao: 'EXCLUIR_ARQUIVO',
       alvo: nomeArquivo,
-      mensagem: 'Arquivo excluÃƒÂ­do pelo painel.',
+      mensagem: 'Arquivo excluÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­do pelo painel.',
       detalhe: {
         bucket: BUCKET_NAME,
         nomeArquivo,
@@ -2258,7 +2378,7 @@ app.delete('/arquivos/:nomeArquivo', async (req, res) => {
 
     return res.json({
       success: true,
-      message: 'Arquivo excluÃƒÂ­do com sucesso',
+      message: 'Arquivo excluÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­do com sucesso',
       data: {
         nomeArquivo,
       },
@@ -2513,7 +2633,7 @@ app.get('/logs', async (req, res) => {
     const arquivos = (await listarArquivosBucketCached({ force })).slice(0, 100).map((arquivo) => ({
       tipo: 'ARQUIVO_GERADO',
       status: 'SUCESSO',
-      descricao: `Arquivo ${arquivo.nomeArquivo} disponÃƒÂ­vel no bucket`,
+      descricao: `Arquivo ${arquivo.nomeArquivo} disponÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­vel no bucket`,
       origem: 'BUCKET',
       pedidoIntegrador: null,
       campanha: arquivo.campanha,
@@ -2721,6 +2841,36 @@ app.post('/proxy/enviapedido', async (req, res) => {
    VALIDADOR DE PEDIDO
 ========================= */
 
+app.get('/validador/metadados', authMiddleware, async (req, res) => {
+  try {
+    const redes = await listarMetadadosValidador();
+
+    return res.json({
+      success: true,
+      data: {
+        redes,
+        tabelasReferencia: VALIDADOR_TABELAS_REFERENCIA,
+      },
+    });
+  } catch (error) {
+    return erroResponse(res, 500, 'Erro ao listar bases do validador', error);
+  }
+});
+
+app.post('/validador/detectar-rede', authMiddleware, async (req, res) => {
+  try {
+    const payload = req.body?.payload ?? req.body?.pedido ?? req.body;
+    const data = await detectarRedeValidador(payload);
+
+    return res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    return erroResponse(res, 500, 'Erro ao detectar base do pedido', error);
+  }
+});
+
 app.post('/validador/pedido', authMiddleware, async (req, res) => {
   try {
     const payload = req.body?.payload ?? req.body?.pedido ?? req.body;
@@ -2751,7 +2901,7 @@ app.get('/debug/colunas/:tabela', async (req, res) => {
     const tabelasPermitidas = ['pedidoconfirmaintegracao', 'criafilecampanha', 'log_integracao_pedidos'];
 
     if (!tabelasPermitidas.includes(req.params.tabela)) {
-      return erroResponse(res, 400, 'Tabela nÃƒÂ£o permitida');
+      return erroResponse(res, 400, 'Tabela nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o permitida');
     }
 
     const [rows] = await queryComTimeout(`SHOW COLUMNS FROM ${req.params.tabela}`);

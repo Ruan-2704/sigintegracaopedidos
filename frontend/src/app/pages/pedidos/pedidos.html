@@ -60,6 +60,8 @@
       <option [ngValue]="10">10</option>
       <option [ngValue]="20">20</option>
       <option [ngValue]="50">50</option>
+      <option [ngValue]="100">100</option>
+      <option [ngValue]="200">200</option>
     </select>
   </div>
 
@@ -82,15 +84,15 @@
   <table>
     <thead>
       <tr>
-        <th>Status</th>
-        <th>Data</th>
-        <th>Pedido</th>
-        <th>Cliente</th>
-        <th>Distribuidor</th>
-        <th>Campanha / OL</th>
-        <th>Itens</th>
-        <th>Motivo</th>
-        <th>Integradora</th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('status')">Status <span>{{ indicadorOrdenacao('status') }}</span></button></th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('data')">Data <span>{{ indicadorOrdenacao('data') }}</span></button></th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('pedido')">Pedido <span>{{ indicadorOrdenacao('pedido') }}</span></button></th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('cliente')">Cliente <span>{{ indicadorOrdenacao('cliente') }}</span></button></th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('distribuidor')">Distribuidor <span>{{ indicadorOrdenacao('distribuidor') }}</span></button></th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('campanha')">Campanha / OL <span>{{ indicadorOrdenacao('campanha') }}</span></button></th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('itens')">Itens <span>{{ indicadorOrdenacao('itens') }}</span></button></th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('motivo')">Motivo <span>{{ indicadorOrdenacao('motivo') }}</span></button></th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('integradora')">Integradora <span>{{ indicadorOrdenacao('integradora') }}</span></button></th>
         <th>Acao</th>
       </tr>
     </thead>
@@ -114,7 +116,7 @@
           <strong>{{ item.motivo || '-' }}</strong>
           <small>{{ item.mensagem || '' }}</small>
         </td>
-        <td><span class="badge soft">{{ item.integradora || '-' }}</span></td>
+        <td><span class="badge integradora" [ngClass]="classeIntegradora(item)">{{ item.integradora || '-' }}</span></td>
         <td>
           <div class="table-actions">
             <button type="button" class="btn-table" (click)="visualizar(item)">Ver</button>
@@ -179,15 +181,36 @@
     </section>
 
     <section class="detail-panel" *ngIf="abaDetalhe === 'recebido'">
-      <pre>{{ formatarJson(selecionado.payloadRecebido || selecionado.payload_recebido) }}</pre>
+      <div class="json-box">
+        <button type="button" class="copy-json-btn" title="Copiar JSON" (click)="copiarJson('recebido')" [disabled]="!temPayloadJson('recebido')">
+          <span class="copy-icon" aria-hidden="true" *ngIf="copiadoAba !== 'recebido'"></span>
+          <span class="copy-ok" aria-hidden="true" *ngIf="copiadoAba === 'recebido'">OK</span>
+          <span class="sr-only">Copiar JSON</span>
+        </button>
+        <pre>{{ jsonDetalhe('recebido') }}</pre>
+      </div>
     </section>
 
     <section class="detail-panel" *ngIf="abaDetalhe === 'sigrede'">
-      <pre>{{ formatarJson(selecionado.payloadSigrede || selecionado.payload_sigrede) }}</pre>
+      <div class="json-box">
+        <button type="button" class="copy-json-btn" title="Copiar JSON" (click)="copiarJson('sigrede')" [disabled]="!temPayloadJson('sigrede')">
+          <span class="copy-icon" aria-hidden="true" *ngIf="copiadoAba !== 'sigrede'"></span>
+          <span class="copy-ok" aria-hidden="true" *ngIf="copiadoAba === 'sigrede'">OK</span>
+          <span class="sr-only">Copiar JSON</span>
+        </button>
+        <pre>{{ jsonDetalhe('sigrede') }}</pre>
+      </div>
     </section>
 
     <section class="detail-panel" *ngIf="abaDetalhe === 'retorno'">
-      <pre>{{ formatarJson(selecionado.payloadRetorno || selecionado.payload_retorno) }}</pre>
+      <div class="json-box">
+        <button type="button" class="copy-json-btn" title="Copiar JSON" (click)="copiarJson('retorno')" [disabled]="!temPayloadJson('retorno')">
+          <span class="copy-icon" aria-hidden="true" *ngIf="copiadoAba !== 'retorno'"></span>
+          <span class="copy-ok" aria-hidden="true" *ngIf="copiadoAba === 'retorno'">OK</span>
+          <span class="sr-only">Copiar JSON</span>
+        </button>
+        <pre>{{ jsonDetalhe('retorno') }}</pre>
+      </div>
     </section>
 
     <section class="detail-panel" *ngIf="abaDetalhe === 'validacao'">

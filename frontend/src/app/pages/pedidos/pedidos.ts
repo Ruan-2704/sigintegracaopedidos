@@ -12,6 +12,7 @@ export class PedidosComponent implements OnInit {
   pedidos: any[] = [];
   selecionado: any = null;
   abaDetalhe: 'resumo' | 'recebido' | 'sigrede' | 'retorno' | 'validacao' = 'resumo';
+  copiadoAba: 'recebido' | 'sigrede' | 'retorno' | '' = '';
   validacoesSelecionado: any[] = [];
   carregando = false;
   erro = '';
@@ -24,7 +25,9 @@ export class PedidosComponent implements OnInit {
   dataFim = '';
   ultimaAtualizacao: Date | null = null;
   paginaAtual = 1;
-  itensPorPagina = 10;
+  itensPorPagina = 200;
+  ordenarCampo = 'data';
+  ordenarDirecao: 'asc' | 'desc' = 'desc';
   totalRegistros = 0;
   totalPaginas = 1;
 
@@ -59,7 +62,7 @@ export class PedidosComponent implements OnInit {
       force
     }).subscribe({
       next: (res) => {
-        this.pedidos = res.data || [];
+        this.pedidos = this.aplicarOrdenacao(res.data || []);
         this.totalRegistros = res.meta?.total || 0;
         this.totalPaginas = res.meta?.totalPages || 1;
         this.ultimaAtualizacao = new Date();
@@ -91,6 +94,24 @@ export class PedidosComponent implements OnInit {
   }
 
   alterarItensPorPagina(): void { this.paginaAtual = 1; this.carregar(true); }
+
+  ordenarPor(campo: string): void {
+    if (this.ordenarCampo === campo) {
+      this.ordenarDirecao = this.ordenarDirecao === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.ordenarCampo = campo;
+      this.ordenarDirecao = 'asc';
+    }
+
+    this.pedidos = this.aplicarOrdenacao(this.pedidos);
+    this.salvarCacheLocal();
+    this.cdr.detectChanges();
+  }
+
+  indicadorOrdenacao(campo: string): string {
+    if (this.ordenarCampo !== campo) return '';
+    return this.ordenarDirecao === 'asc' ? '↑' : '↓';
+  }
 
   visualizar(item: any, validar = false): void {
     const id = item.id || item.codigo;
@@ -130,6 +151,33 @@ export class PedidosComponent implements OnInit {
 
   paginaAnterior(): void { if (this.paginaAtual > 1) { this.paginaAtual--; this.carregar(); } }
   proximaPagina(): void { if (this.paginaAtual < this.totalPaginas) { this.paginaAtual++; this.carregar(); } }
+
+  private aplicarOrdenacao(lista: any[]): any[] {
+    const direcao = this.ordenarDirecao === 'asc' ? 1 : -1;
+    return [...lista].sort((a, b) => {
+      const va = this.valorOrdenacao(a, this.ordenarCampo);
+      const vb = this.valorOrdenacao(b, this.ordenarCampo);
+
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * direcao;
+      return String(va).localeCompare(String(vb), 'pt-BR', { numeric: true, sensitivity: 'base' }) * direcao;
+    });
+  }
+
+  private valorOrdenacao(item: any, campo: string): any {
+    const mapa: any = {
+      status: this.rotuloStatus(item),
+      data: new Date(item?.dataPedidoFormatada || item?.dataHora || item?.dataPedido || 0).getTime(),
+      pedido: item?.pedidoIntegrador || item?.pedidoIntegradora || '',
+      cliente: item?.cnpjCliente || item?.CnpjCliente || '',
+      distribuidor: item?.cnpjDistribuidor || item?.CnpjDistribuidor || '',
+      campanha: item?.idCampanha || item?.IdCampanha || '',
+      itens: Number(item?.itens || 0),
+      motivo: item?.motivo || item?.mensagem || '',
+      integradora: item?.integradora || ''
+    };
+
+    return mapa[campo] ?? '';
+  }
 
   formatarDataPedido(item: any): string {
     const valor = item?.dataPedidoFormatada || item?.dataHora || item?.dataPedido;
@@ -172,6 +220,15 @@ export class PedidosComponent implements OnInit {
     return rotulos[status] || status;
   }
 
+  classeIntegradora(item: any): string {
+    const integradora = String(item?.integradora || '').toLowerCase().replace(/\s+/g, '');
+
+    if (integradora.includes('smart')) return 'integradora-smart';
+    if (integradora.includes('cotefacil') || integradora.includes('cote')) return 'integradora-cotefacil';
+
+    return 'integradora-outra';
+  }
+
   podeValidar(item = this.selecionado): boolean {
     const status = this.statusPedido(item);
     return status === 'ERRO' || status === 'REJEITADO' || status === 'DUPLICADO';
@@ -179,6 +236,7 @@ export class PedidosComponent implements OnInit {
 
   selecionarAba(aba: 'resumo' | 'recebido' | 'sigrede' | 'retorno' | 'validacao'): void {
     this.abaDetalhe = aba;
+    this.copiadoAba = '';
     this.cdr.detectChanges();
   }
 
@@ -246,6 +304,64 @@ export class PedidosComponent implements OnInit {
     } catch {
       return valor;
     }
+  }
+
+  payloadDetalhe(tipo: 'recebido' | 'sigrede' | 'retorno'): any {
+    if (!this.selecionado) return null;
+
+    const campos: Record<string, any> = {
+      recebido: this.selecionado.payloadRecebido || this.selecionado.payload_recebido,
+      sigrede: this.selecionado.payloadSigrede || this.selecionado.payload_sigrede,
+      retorno: this.selecionado.payloadRetorno || this.selecionado.payload_retorno
+    };
+
+    return campos[tipo] || null;
+  }
+
+  jsonDetalhe(tipo: 'recebido' | 'sigrede' | 'retorno'): string {
+    return this.formatarJson(this.payloadDetalhe(tipo));
+  }
+
+  temPayloadJson(tipo: 'recebido' | 'sigrede' | 'retorno'): boolean {
+    return !!this.payloadDetalhe(tipo);
+  }
+
+  async copiarJson(tipo: 'recebido' | 'sigrede' | 'retorno'): Promise<void> {
+    const texto = this.jsonDetalhe(tipo);
+    if (!texto || texto === 'Nao informado.') return;
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(texto);
+      } else {
+        this.copiarTextoFallback(texto);
+      }
+
+      this.copiadoAba = tipo;
+      window.setTimeout(() => {
+        if (this.copiadoAba === tipo) {
+          this.copiadoAba = '';
+          this.cdr.detectChanges();
+        }
+      }, 1600);
+    } catch {
+      this.copiarTextoFallback(texto);
+      this.copiadoAba = tipo;
+    }
+
+    this.cdr.detectChanges();
+  }
+
+  private copiarTextoFallback(texto: string): void {
+    const textarea = document.createElement('textarea');
+    textarea.value = texto;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
   }
 
   parseJsonSeguro(valor: any): any {

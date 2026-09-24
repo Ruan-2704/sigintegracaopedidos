@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { IntegracaoService } from '../../services/service';
 
 @Component({
@@ -6,15 +6,122 @@ import { IntegracaoService } from '../../services/service';
   templateUrl: './validador-pedido.html',
   styleUrls: ['./validador-pedido.scss']
 })
-export class ValidadorPedidoComponent {
+export class ValidadorPedidoComponent implements OnInit {
   jsonPedido = '';
-  rede = 'redemgfarma';
+  rede = 'redecomprecerto';
   validarBanco = true;
   carregando = false;
+  carregandoMetadados = false;
+  detectandoRede = false;
   erro = '';
+  avisoDeteccao = '';
   resultado: any = null;
+  redes: any[] = this.redesFallback();
+  private detectarTimer: any = null;
 
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
+
+  ngOnInit(): void {
+    this.carregarMetadados();
+  }
+
+  carregarMetadados(): void {
+    this.carregandoMetadados = true;
+
+    this.service.getValidadorMetadados().subscribe({
+      next: (res: any) => {
+        const data = res.data || res;
+        this.redes = data.redes?.length ? data.redes : this.redesFallback();
+
+        if (!this.redes.some((item) => item.schema === this.rede) && this.redes.length) {
+          this.rede = this.redes[0].schema;
+        }
+
+        this.carregandoMetadados = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.redes = this.redesFallback();
+        this.carregandoMetadados = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  onJsonChange(value: string): void {
+    this.jsonPedido = value;
+    this.resultado = null;
+    this.avisoDeteccao = '';
+
+    clearTimeout(this.detectarTimer);
+    this.detectarTimer = setTimeout(() => this.detectarRedePorJson(), 450);
+  }
+
+  detectarRedePorJson(): void {
+    let payload: any;
+
+    try {
+      payload = JSON.parse(this.jsonPedido || '{}');
+    } catch {
+      return;
+    }
+
+    const info = payload?.informacoes || payload || {};
+
+    if (!info.cnpjCliente && !info.CnpjCliente && !info.idOL && !info.IdOL && !info.idCampanha && !info.IdCampanha) {
+      return;
+    }
+
+    this.detectandoRede = true;
+
+    this.service.detectarRedePedido(payload).subscribe({
+      next: (res: any) => {
+        const data = res.data || res;
+
+        if (data.rede) {
+          this.rede = data.rede;
+          this.avisoDeteccao = `Base identificada: ${data.nome || data.rede}`;
+        } else {
+          this.avisoDeteccao = 'Nao consegui identificar a base automaticamente. Escolha uma base na lista.';
+        }
+
+        this.detectandoRede = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.detectandoRede = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private tabelasReferenciaFallback(): string[] {
+    return [
+      'farmacias',
+      'operacoes_logisticas',
+      'farmacias_opl',
+      'fornecedores',
+      'fornecedores_participa_operacao_logistica',
+      'medicamentos',
+      'medicamentos_opl'
+    ];
+  }
+
+  private redesFallback(): any[] {
+    const tabelas = this.tabelasReferenciaFallback().map((nome) => ({ nome, referencia: true }));
+
+    return [
+      { schema: 'redecomprecerto', nome: 'Grupo Compre Certo', tabelas },
+      { schema: 'drogarede', nome: 'Droga Rede', tabelas },
+      { schema: 'nossarede', nome: 'Nossa Rede', tabelas },
+      { schema: 'farmelhor', nome: 'FarMelhor', tabelas },
+      { schema: 'redefarma', nome: 'RedeFarma', tabelas },
+      { schema: 'redemgfarma', nome: 'Rede MG Farma', tabelas },
+      { schema: 'mercaweb', nome: 'Merca Web', tabelas },
+      { schema: 'vidafarmacias', nome: 'Vida Farmacias', tabelas },
+      { schema: 'grupoadmpharma', nome: 'Grupo ADM Pharma', tabelas }
+    ];
+  }
 
   validar(): void {
     this.erro = '';
@@ -25,7 +132,7 @@ export class ValidadorPedidoComponent {
     try {
       payload = JSON.parse(this.jsonPedido || '{}');
     } catch (error: any) {
-      this.erro = `JSON inválido: ${error.message}`;
+      this.erro = `JSON invalido: ${error.message}`;
       this.cdr.detectChanges();
       return;
     }
@@ -53,6 +160,7 @@ export class ValidadorPedidoComponent {
     this.jsonPedido = '';
     this.resultado = null;
     this.erro = '';
+    this.avisoDeteccao = '';
     this.cdr.detectChanges();
   }
 
@@ -96,6 +204,7 @@ export class ValidadorPedidoComponent {
       ]
     }, null, 2);
 
+    this.onJsonChange(this.jsonPedido);
     this.cdr.detectChanges();
   }
 

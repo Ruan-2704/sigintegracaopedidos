@@ -19,8 +19,12 @@
 
     <div class="form-row">
       <label>
-        Rede/base para cruzamento
-        <input type="text" [(ngModel)]="rede" placeholder="redemgfarma" />
+        Banco/base para cruzamento
+        <select [(ngModel)]="rede">
+          <option *ngFor="let item of redes" [value]="item.schema">
+            {{ item.nome }} - {{ item.schema }}
+          </option>
+        </select>
       </label>
 
       <label class="check-field">
@@ -29,8 +33,13 @@
       </label>
     </div>
 
+    <div class="detect-box" *ngIf="detectandoRede || avisoDeteccao || carregandoMetadados">
+      {{ carregandoMetadados ? 'Carregando bases...' : detectandoRede ? 'Identificando base pelo JSON...' : avisoDeteccao }}
+    </div>
+
     <textarea
       [(ngModel)]="jsonPedido"
+      (ngModelChange)="onJsonChange($event)"
       spellcheck="false"
       placeholder="Cole aqui o JSON completo do pedido..."
     ></textarea>
