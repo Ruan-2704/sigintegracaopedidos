@@ -313,4 +313,12 @@ export class IntegracaoService {
       validarBanco: options.validarBanco !== false
     });
   }
+
+  getValidadorMetadados(): Observable<ApiResponse<any>> {
+    return this.getRaw<ApiResponse<any>>('/validador/metadados');
+  }
+
+  detectarRedePedido(payload: any): Observable<ApiResponse<any>> {
+    return this.postRaw<ApiResponse<any>>('/validador/detectar-rede', { payload });
+  }
 }

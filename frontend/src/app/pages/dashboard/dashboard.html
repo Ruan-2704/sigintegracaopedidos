@@ -1,211 +1,136 @@
 <div class="dashboard-page" [class.refreshing]="carregando && dados">
-<div class="page-title">
-  <div>
-    <h2>Dashboard Operacional</h2>
-    <p>Visão geral da saúde da integração, arquivos enviados e pedidos inseridos.</p>
+  <div class="page-title compact-title">
+    <div>
+      <h2>Dashboard Operacional</h2>
+      <p>Visao geral da integracao, pedidos, arquivos e alertas recentes.</p>
+    </div>
+
+    <div class="dashboard-actions">
+      <input type="date" [(ngModel)]="dataInicial" />
+      <input type="date" [(ngModel)]="dataFinal" />
+      <button class="btn-primary" type="button" (click)="carregar(true)" [disabled]="carregando">
+        {{ carregando ? 'Atualizando...' : 'Atualizar' }}
+      </button>
+    </div>
   </div>
 
-  <div class="dashboard-actions">
-    <input type="date" [(ngModel)]="dataInicial" />
-    <input type="date" [(ngModel)]="dataFinal" />
-    <button class="btn-primary" type="button" (click)="carregar(true)" [disabled]="carregando">
-      {{ carregando ? 'Atualizando...' : 'Atualizar' }}
-    </button>
+  <div *ngIf="carregando && !dados" class="state-card loading-card">
+    <span></span>
+    <span></span>
+    <span></span>
   </div>
-</div>
+  <div *ngIf="!carregando && erro" class="state-card error">{{ erro }}</div>
 
-<div *ngIf="carregando && !dados" class="state-card loading-card">
-  <span></span>
-  <span></span>
-  <span></span>
-</div>
-<div *ngIf="!carregando && erro" class="state-card error">{{ erro }}</div>
+  <ng-container *ngIf="!erro && dados">
+    <section class="kpi-grid">
+      <a class="kpi-card" routerLink="/pedidos">
+        <div class="kpi-content">
+          <span>Pedidos no periodo</span>
+          <strong>{{ dados.totalPedidos || 0 }}</strong>
+        </div>
+        <div class="kpi-icon">#</div>
+      </a>
 
-<ng-container *ngIf="!erro && dados">
-  <section class="kpi-grid">
-    <a class="kpi-card" routerLink="/pedidos">
-      <div class="kpi-content">
-        <span>Pedidos no periodo</span>
-        <strong>{{ dados.totalPedidos || 0 }}</strong>
-        <small>{{ periodoLabel }}</small>
+      <a class="kpi-card" routerLink="/arquivos">
+        <div class="kpi-content">
+          <span>Arquivos no bucket</span>
+          <strong>{{ dados.totalArquivos || 0 }}</strong>
+        </div>
+        <div class="kpi-icon">A</div>
+      </a>
+
+      <a class="kpi-card warning" routerLink="/logs" [queryParams]="{ aba: 'operacionais', status: 'ERRO' }">
+        <div class="kpi-content">
+          <span>Erros no periodo</span>
+          <strong>{{ dados.totalErros || 0 }}</strong>
+        </div>
+        <div class="kpi-icon">!</div>
+      </a>
+
+      <a class="kpi-card" routerLink="/pedidos">
+        <div class="kpi-content">
+          <span>Pedidos hoje</span>
+          <strong>{{ dados.pedidosHoje || 0 }}</strong>
+        </div>
+        <div class="kpi-icon">H</div>
+      </a>
+    </section>
+
+    <section class="dashboard-grid main-grid">
+      <div class="panel integradora-panel">
+        <div class="panel-header">
+          <div>
+            <h3>Pedidos por integradora</h3>
+          </div>
+        </div>
+
+        <div class="bar-list" *ngIf="dados.porIntegradora?.length; else semIntegradora">
+          <div class="bar-row" *ngFor="let item of dados.porIntegradora">
+            <div class="bar-label">
+              <span>{{ item.integradora || 'Nao informada' }}</span>
+              <strong>{{ item.total }}</strong>
+            </div>
+
+            <div class="bar-track">
+              <div
+                class="bar-fill"
+                [style.width.%]="(item.total / (dados.porIntegradora[0]?.total || 1)) * 100"
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <ng-template #semIntegradora>
+          <div class="empty">Sem dados de integradora.</div>
+        </ng-template>
       </div>
-      <div class="kpi-icon">🧾</div>
-    </a>
 
-    <a class="kpi-card" routerLink="/arquivos">
-      <div class="kpi-content">
-        <span>Arquivos no bucket</span>
-        <strong>{{ dados.totalArquivos || 0 }}</strong>
-        <small>{{ dados.bucketOnline === false ? 'Bucket indisponivel' : 'JSONs disponiveis' }}</small>
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h3>Pedidos por rede/loja</h3>
+          </div>
+          <a class="link-action" routerLink="/pedidos">Ver pedidos</a>
+        </div>
+
+        <div class="campaign-list" *ngIf="dados.porRede?.length; else semRede">
+          <div class="campaign" *ngFor="let item of dados.porRede">
+            <div>
+              <strong>{{ item.rede || 'Nao identificada' }}</strong>
+              <span>{{ item.cnpj || '-' }}</span>
+            </div>
+            <b>{{ item.total }}</b>
+          </div>
+        </div>
+
+        <ng-template #semRede>
+          <div class="empty">Sem dados de rede/loja.</div>
+        </ng-template>
       </div>
-      <div class="kpi-icon">📁</div>
-    </a>
+    </section>
 
-    <div class="kpi-card">
-      <div class="kpi-content">
-        <span>Servicos online</span>
-        <strong>{{ dados.servicosOnline || 0 }}/{{ dados.totalServicos || 0 }}</strong>
-        <small>{{ dados.pedidosHoje || 0 }} pedidos hoje</small>
-      </div>
-      <div class="kpi-icon">⚡</div>
-    </div>
-
-    <a class="kpi-card warning" routerLink="/logs">
-      <div class="kpi-content">
-        <span>Erros no periodo</span>
-        <strong>{{ dados.totalErros || 0 }}</strong>
-        <small>Taxa estimada: {{ dados.taxaErro || 0 }}%</small>
-      </div>
-      <div class="kpi-icon">⚠️</div>
-    </a>
-  </section>
-
-  <section class="health-strip">
-    <div>
-      <strong>Status geral</strong>
-      <span class="badge good">{{ dados.status }}</span>
-    </div>
-
-    <div>
-      <strong>Bucket</strong>
-      <span [class]="dados.bucketOnline === false ? 'badge bad' : 'badge good'">
-        {{ dados.bucket }} — {{ dados.bucketOnline === false ? 'Offline' : 'Online' }}
-      </span>
-    </div>
-
-    <div>
-      <strong>Última movimentação</strong>
-      <span>
-        {{ dados.ultimaMovimentacao ? (dados.ultimaMovimentacao | date:'dd/MM/yyyy HH:mm') : 'Sem registro' }}
-      </span>
-    </div>
-
-    <div>
-      <strong>Atualizado em</strong>
-      <span>{{ ultimaAtualizacao | date:'dd/MM/yyyy HH:mm:ss' }}</span>
-    </div>
-  </section>
-
-  <section class="dashboard-grid">
-    <div class="panel">
+    <section class="panel alerts-panel">
       <div class="panel-header">
         <div>
-          <h3>Pedidos por integradora</h3>
-          <p>Distribuição dos pedidos recebidos por origem.</p>
+          <h3>Ultimos alertas</h3>
         </div>
+        <a class="link-action" routerLink="/logs" [queryParams]="{ aba: 'operacionais', status: 'ERRO' }">Abrir logs</a>
       </div>
 
-      <div class="bar-list" *ngIf="dados.porIntegradora?.length; else semIntegradora">
-        <div class="bar-row" *ngFor="let item of dados.porIntegradora">
-          <div class="bar-label">
-            <span>{{ item.integradora || 'Não informada' }}</span>
-            <strong>{{ item.total }}</strong>
-          </div>
-
-          <div class="bar-track">
-            <div
-              class="bar-fill"
-              [style.width.%]="(item.total / (dados.porIntegradora[0]?.total || 1)) * 100"
-            ></div>
-          </div>
-        </div>
-      </div>
-
-      <ng-template #semIntegradora>
-        <div class="empty">Sem dados de integradora.</div>
-      </ng-template>
-    </div>
-
-    <div class="panel">
-      <div class="panel-header">
-        <div>
-          <h3>Pedidos por rede/loja</h3>
-          <p>Ranking das lojas com mais pedidos inseridos.</p>
-        </div>
-      </div>
-
-      <div class="campaign-list" *ngIf="dados.porRede?.length; else semRede">
-        <div class="campaign" *ngFor="let item of dados.porRede">
+      <div class="alert-list" *ngIf="dados.alertasRecentes?.length; else semAlertas">
+        <a class="alert-item" *ngFor="let alerta of dados.alertasRecentes" routerLink="/logs" [queryParams]="alertaQueryParams(alerta)">
+          <span class="alert-severity" [class.error]="alerta.tipo === 'ERRO_LOG' || alerta.tipo === 'SERVICO_OFFLINE'">{{ tipoAlerta(alerta) }}</span>
           <div>
-            <strong>{{ item.rede || 'Não identificada' }}</strong>
-            <span>{{ item.cnpj || '-' }}</span>
+            <strong>{{ textoLimpo(alerta.servico || 'Evento operacional') }}</strong>
+            <p>{{ textoLimpo(alerta.mensagem) }}</p>
           </div>
-          <b>{{ item.total }}</b>
-        </div>
-      </div>
-
-      <ng-template #semRede>
-        <div class="empty">Sem dados de rede/loja.</div>
-      </ng-template>
-    </div>
-  </section>
-
-  <section class="dashboard-grid">
-    <div class="panel">
-      <div class="panel-header">
-        <div>
-          <h3>Resumo operacional</h3>
-          <p>Acompanhamento rápido dos principais indicadores da integração.</p>
-        </div>
-      </div>
-
-      <div class="campaign-list">
-        <div class="campaign">
-          <div>
-            <strong>Total de pedidos</strong>
-            <span>{{ periodoLabel }}</span>
-          </div>
-          <b>{{ dados.totalPedidos || 0 }}</b>
-        </div>
-
-        <div class="campaign">
-          <div>
-            <strong>Servicos online</strong>
-            <span>Processos operacionais ativos</span>
-          </div>
-          <b>{{ dados.servicosOnline || 0 }}/{{ dados.totalServicos || 0 }}</b>
-        </div>
-
-        <div class="campaign">
-          <div>
-            <strong>Arquivos no bucket</strong>
-            <span>{{ dados.bucketOnline === false ? 'Bucket indisponivel' : 'JSONs disponiveis' }}</span>
-          </div>
-          <b>{{ dados.totalArquivos || 0 }}</b>
-        </div>
-
-        <div class="campaign">
-          <div>
-            <strong>Taxa de erro</strong>
-            <span>Erros sobre pedidos do periodo</span>
-          </div>
-          <b>{{ dados.taxaErro || 0 }}%</b>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-header">
-        <div>
-          <h3>Histórico de alertas</h3>
-          <p>Últimas notificações operacionais registradas no backend.</p>
-        </div>
-      </div>
-
-      <div class="campaign-list" *ngIf="dados.alertasRecentes?.length; else semAlertas">
-        <div class="campaign" *ngFor="let alerta of dados.alertasRecentes">
-          <div>
-            <strong>{{ alerta.servico }} • {{ alerta.tipo }}</strong>
-            <span>{{ alerta.mensagem }}</span>
-          </div>
-          <b>{{ alerta.criado_em | date:'dd/MM HH:mm' }}</b>
-        </div>
+          <time>{{ alerta.criado_em | date:'dd/MM HH:mm' }}</time>
+        </a>
       </div>
 
       <ng-template #semAlertas>
         <div class="empty">Nenhum alerta registrado.</div>
       </ng-template>
-    </div>
-  </section>
-</ng-container>
+    </section>
+  </ng-container>
 </div>

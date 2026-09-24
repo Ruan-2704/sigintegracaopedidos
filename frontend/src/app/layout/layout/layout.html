@@ -2,12 +2,12 @@
   <header class="topbar">
     <div class="brand-inline">
       <button class="menu-toggle" type="button" (click)="toggleMenu()" [attr.aria-label]="menuAberto ? 'Fechar menu' : 'Abrir menu'">
-        <span *ngIf="menuAberto">×</span>
-        <span *ngIf="!menuAberto">☰</span>
+        <span *ngIf="menuAberto">X</span>
+        <span *ngIf="!menuAberto">=</span>
       </button>
 
       <div class="brand-mark">
-        <img src="assets/sig-cotacao-mark.png" alt="SIG Cotação" />
+        <img src="assets/logo-sicotacao.webp" alt="SIG Cotação" />
       </div>
 
       <div class="brand-text">
@@ -34,20 +34,20 @@
     </div>
 
     <nav class="nav">
-  <a routerLink="/dashboard" routerLinkActive="active"><span>▦</span>Dashboard</a>
-  <a routerLink="/servicos" routerLinkActive="active"><span>⚙</span>Serviços e Execuções</a>
-  <a routerLink="/arquivos" routerLinkActive="active"><span>▣</span>Arquivos Gerados</a>
-  <a routerLink="/pedidos" routerLinkActive="active"><span>🛒</span>Pedidos Inseridos</a>
-  <a routerLink="/validador-pedido" routerLinkActive="active"><span>✓</span>Validador de Pedido</a>
-  <a routerLink="/logs" routerLinkActive="active"><span>â—·</span>Logs e Auditoria</a>
-</nav>
+      <a routerLink="/dashboard" routerLinkActive="active"><span>D</span>Dashboard</a>
+      <a routerLink="/servicos" routerLinkActive="active"><span>S</span>Serviços e Execuções</a>
+      <a routerLink="/arquivos" routerLinkActive="active"><span>A</span>Arquivos Gerados</a>
+      <a routerLink="/pedidos" routerLinkActive="active"><span>P</span>Pedidos da Integração</a>
+      <a routerLink="/validador-pedido" routerLinkActive="active"><span>V</span>Validador de Pedido</a>
+      <a routerLink="/logs" routerLinkActive="active"><span>L</span>Logs e Auditoria</a>
+    </nav>
 
     <div class="sidebar-footer">
       <div class="mini-status">
         <span class="dot" [class.error]="status === 'erro' || banco === 'erro' || bucket === 'erro'"></span>
         <div>
           <strong>{{ status | titlecase }}</strong>
-          <small>Banco: {{ banco }} • Bucket: {{ bucket }}</small>
+          <small>Banco: {{ banco }} - Bucket: {{ bucket }}</small>
         </div>
       </div>
 

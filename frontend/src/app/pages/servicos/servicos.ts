@@ -90,7 +90,7 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
 
     return {
       chave,
-      nome: item.nome || this.nomePadrao(chave),
+      nome: this.textoLimpo(item.nome || this.nomePadrao(chave)),
       porta: item.porta,
       servidor: item.servidor,
       online: !!item.online,
@@ -102,6 +102,15 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
       jar: item.jar || item.jarPath || null,
     };
   }
+  textoLimpo(valor: any): string {
+    const texto = String(valor || '');
+    const lower = texto.toLowerCase();
+    if (lower.includes('gera') && lower.includes('arquivo')) return 'Geracao de arquivos';
+    if (lower.includes('exclus') && lower.includes('arquivo')) return 'Exclusao de arquivos';
+    if (lower.includes('api inser') && lower.includes('pedido')) return 'API insercao de pedidos';
+    return texto;
+  }
+
   private marcarServicoIniciando(chave: string): void {
     this.servicos = this.servicos.map((item) => item.chave === chave
       ? { ...item, online: false, statusOperacional: 'iniciando', emExecucaoPainel: true }
@@ -112,9 +121,9 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
 
 
   nomePadrao(chave: string): string {
-    if (chave === 'geracao') return 'Geração de arquivos';
-    if (chave === 'exclusao') return 'Exclusão de arquivos';
-    if (chave === 'pedidos') return 'API inserção de pedidos';
+    if (chave === 'geracao') return 'Geracao de arquivos';
+    if (chave === 'exclusao') return 'Exclusao de arquivos';
+    if (chave === 'pedidos') return 'API insercao de pedidos';
     return chave;
   }
 
@@ -408,7 +417,7 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
       const matches = texto.match(/[A-Za-z0-9_.-]+\.json\b/gi) || [];
       matches.forEach((arquivo) => encontrados.add(arquivo.split('/').pop() || arquivo));
 
-      const olMatch = texto.match(/(?:FIM PROCESSAMENTO OL|Concluindo OL|INICIO PROCESSAMENTO OL(?: MULTI-REDE)?|An[a�]lise OL)\s*:?\s*(\d+)/i);
+      const olMatch = texto.match(/(?:FIM PROCESSAMENTO OL|Concluindo OL|INICIO PROCESSAMENTO OL(?: MULTI-REDE)?|Analise OL)\s*:?\s*(\d+)/i);
       if (olMatch?.[1]) {
         olsProcessadas.add(olMatch[1]);
       }

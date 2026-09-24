@@ -19,9 +19,11 @@ export class ArquivosComponent implements OnInit {
   filtro = '';
   ultimaAtualizacao: Date | null = null;
   paginaAtual = 1;
-  itensPorPagina = 10;
+  itensPorPagina = 200;
   totalRegistros = 0;
   totalPaginas = 1;
+  ordenarCampo = 'atualizadoEm';
+  ordenarDirecao: 'asc' | 'desc' = 'desc';
 
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
 
@@ -53,7 +55,7 @@ export class ArquivosComponent implements OnInit {
       force
     }).subscribe({
       next: (res) => {
-        this.arquivos = res.data || [];
+        this.arquivos = this.aplicarOrdenacao(res.data || []);
         this.totalRegistros = res.meta?.total || 0;
         this.totalPaginas = res.meta?.totalPages || 1;
         this.ultimaAtualizacao = new Date();
@@ -70,9 +72,49 @@ export class ArquivosComponent implements OnInit {
     });
   }
 
-  aplicarFiltro(): void { this.paginaAtual = 1; this.carregar(); }
-  limparFiltro(): void { this.filtro = ''; this.paginaAtual = 1; this.carregar(); }
-  alterarItensPorPagina(): void { this.paginaAtual = 1; this.carregar(); }
+  aplicarFiltro(): void { this.paginaAtual = 1; this.carregar(true); }
+  limparFiltro(): void { this.filtro = ''; this.paginaAtual = 1; this.carregar(true); }
+  alterarItensPorPagina(): void { this.paginaAtual = 1; this.carregar(true); }
+
+  ordenarPor(campo: string): void {
+    if (this.ordenarCampo === campo) {
+      this.ordenarDirecao = this.ordenarDirecao === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.ordenarCampo = campo;
+      this.ordenarDirecao = 'asc';
+    }
+
+    this.arquivos = this.aplicarOrdenacao(this.arquivos);
+    this.salvarCacheLocal();
+    this.cdr.detectChanges();
+  }
+
+  indicadorOrdenacao(campo: string): string {
+    if (this.ordenarCampo !== campo) return '';
+    return this.ordenarDirecao === 'asc' ? '↑' : '↓';
+  }
+
+  private aplicarOrdenacao(lista: any[]): any[] {
+    const direcao = this.ordenarDirecao === 'asc' ? 1 : -1;
+    return [...lista].sort((a, b) => {
+      const va = this.valorOrdenacao(a, this.ordenarCampo);
+      const vb = this.valorOrdenacao(b, this.ordenarCampo);
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * direcao;
+      return String(va).localeCompare(String(vb), 'pt-BR', { numeric: true, sensitivity: 'base' }) * direcao;
+    });
+  }
+
+  private valorOrdenacao(item: any, campo: string): any {
+    const mapa: any = {
+      nomeArquivo: item?.nomeArquivo || '',
+      campanha: item?.campanha || '',
+      tamanhoBytes: Number(item?.tamanhoBytes || 0),
+      criadoEm: new Date(item?.criadoEm || 0).getTime(),
+      atualizadoEm: new Date(item?.atualizadoEm || 0).getTime()
+    };
+
+    return mapa[campo] ?? '';
+  }
 
   formatarTamanho(bytes: number): string {
     if (!bytes) return '0 KB';
@@ -93,7 +135,7 @@ export class ArquivosComponent implements OnInit {
       },
       error: (err) => {
         console.error('Erro ao visualizar arquivo:', err);
-        this.previewArquivo = { erro: 'Não foi possível carregar a prévia do arquivo.' };
+        this.previewArquivo = { erro: 'Nao foi possivel carregar a previa do arquivo.' };
         this.carregandoPreview = false;
         this.cdr.detectChanges();
       }
@@ -122,7 +164,9 @@ export class ArquivosComponent implements OnInit {
     return JSON.stringify({
       page: this.paginaAtual,
       limit: this.itensPorPagina,
-      search: this.filtro || ''
+      search: this.filtro || '',
+      ordenarCampo: this.ordenarCampo || '',
+      ordenarDirecao: this.ordenarDirecao || ''
     });
   }
 
@@ -132,7 +176,7 @@ export class ArquivosComponent implements OnInit {
       const item = cache?.[this.cacheId()];
 
       if (item?.data) {
-        this.arquivos = item.data || [];
+        this.arquivos = this.aplicarOrdenacao(item.data || []);
         this.totalRegistros = item.meta?.total || 0;
         this.totalPaginas = item.meta?.totalPages || 1;
         this.ultimaAtualizacao = item.atualizadoEm ? new Date(item.atualizadoEm) : null;

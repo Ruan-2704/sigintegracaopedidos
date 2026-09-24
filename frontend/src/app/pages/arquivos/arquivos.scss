@@ -21,8 +21,11 @@
 button:disabled { opacity: .55; cursor: not-allowed; }
 .table-card { background: #fff; border-radius: 10px; overflow: auto; box-shadow: var(--sig-shadow-soft); border: 1px solid #eef0f8; }
 table { width: 100%; min-width: 1100px; border-collapse: collapse; }
-th { background: var(--sig-blue); color: #fff; text-align: left; padding: 15px; font-size: 13px; position: sticky; top: 0; }
-td { padding: 14px 15px; border-bottom: 1px solid #eef0f8; color: #334155; font-size: 13px; max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+th { background: var(--sig-blue); color: #fff; text-align: left; padding: 12px 13px; font-size: 13px; position: sticky; top: 0; }
+.sort-btn { width: 100%; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 900; padding: 0; cursor: pointer; text-align: left; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; justify-content: flex-start; }
+.sort-btn:hover { transform: none; box-shadow: none; }
+.sort-btn span { min-width: 12px; color: #dbeafe; font-size: 12px; line-height: 1; }
+td { padding: 11px 13px; border-bottom: 1px solid #eef0f8; color: #334155; font-size: 13px; max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 td small { display: block; color: #94a3b8; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; }
 tbody tr:hover { background: #f1f7ff; }
 .badge { border-radius: 999px; padding: 5px 10px; font-weight: 800; font-size: 12px; display: inline-flex; align-items: center; }

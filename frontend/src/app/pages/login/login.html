@@ -1,50 +1,30 @@
 <main class="login-page">
-  <section class="login-hero">
-    <div class="hero-grid"></div>
-    <div class="orb orb-a"></div>
-    <div class="orb orb-b"></div>
-
-    <div class="hero-content">
-      <div class="hero-badge">
-        <img src="assets/sig-cotacao-mark.png" alt="SIG Cotação" />
-        <span>SIG Cotação</span>
-      </div>
-
-      <h1>Controle operacional das integrações em um só lugar.</h1>
-      <p>Monitore serviços, acompanhe logs, consulte arquivos, pedidos e rotinas de execução com segurança.</p>
-
-      <div class="hero-cards">
-        <div><strong>SSH</strong><small>execução remota</small></div>
-        <div><strong>Logs</strong><small>acompanhamento vivo</small></div>
-        <div><strong>API</strong><small>status em tempo real</small></div>
-      </div>
-    </div>
-  </section>
+  <section class="login-hero" aria-label="SIG Cotacao"></section>
 
   <section class="login-panel">
     <form class="login-card" (ngSubmit)="entrar()">
       <div class="login-brand">
-        <img src="assets/sig-cotacao-mark.png" alt="SIG Cotação" />
+        <img src="assets/logo-sicotacao.webp" alt="SIG Cotacao" />
         <div>
           <small>Painel operacional</small>
-          <strong>SIG Cotação</strong>
+          <strong>SIG Cotacao</strong>
         </div>
       </div>
 
       <div class="login-heading">
         <h2>Acesso ao painel</h2>
-        <p>Informe o usuário e a senha para acessar o painel.</p>
+        <p>Informe o usuario e a senha para acessar o painel.</p>
       </div>
 
-      <label>Usuário</label>
+      <label>Usuario</label>
       <div class="input-line">
-        <span>↗</span>
-        <input name="usuario" [(ngModel)]="usuario" placeholder="Digite o usuário" />
+        <span>*</span>
+        <input name="usuario" [(ngModel)]="usuario" placeholder="Digite o usuario" />
       </div>
 
       <label>Senha</label>
       <div class="input-line">
-        <span>●</span>
+        <span>#</span>
         <input name="token" [(ngModel)]="token" type="password" placeholder="Digite a senha" />
       </div>
 
@@ -53,7 +33,7 @@
       </button>
 
       <div *ngIf="erro" class="erro">{{ erro }}</div>
-      <small class="version">SIG Cotação • Integrações Cotefácil / SmartPed</small>
+      <small class="version">SIG Cotacao - Integracoes Cotefacil / SmartPed</small>
     </form>
   </section>
 </main>

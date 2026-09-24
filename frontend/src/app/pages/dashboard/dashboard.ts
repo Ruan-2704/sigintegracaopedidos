@@ -1,7 +1,4 @@
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { IntegracaoService } from '../../services/service';
 
 @Component({
@@ -25,6 +22,7 @@ export class DashboardComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    this.definirPeriodoPadrao();
     this.restaurarCacheLocal();
     this.carregar();
   }
@@ -60,6 +58,80 @@ export class DashboardComponent implements OnInit {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  textoLimpo(valor: any): string {
+    let texto = String(valor || '');
+    const lower = texto.toLowerCase();
+
+    if (lower.includes('api inser') && lower.includes('pedido')) {
+      if (lower.includes('erro identificado')) return 'Erro identificado no log do servico API insercao de pedidos.';
+      if (lower.includes('offline') || lower.includes('jar')) return 'O servico API insercao de pedidos esta offline ou o processo Java/JAR nao foi encontrado.';
+      return 'API insercao de pedidos';
+    }
+
+    const substituicoes: Array<[RegExp, string]> = [
+      [/servi.+?o/gi, 'servico'],
+      [/inser.+?o/gi, 'insercao'],
+      [/execu.+?o/gi, 'execucao'],
+      [/gera.+?o/gi, 'geracao'],
+      [/exclus.+?o/gi, 'exclusao'],
+      [/n.+?o/gi, 'nao'],
+      [/est.+?/gi, 'esta'],
+      [/\u00c3[^\s]*/g, ''],
+      [/\u00c2/g, ''],
+      [/\u00e2[^\s]*/g, '-']
+    ];
+
+    substituicoes.forEach(([regex, replacement]) => {
+      texto = texto.replace(regex, replacement);
+    });
+
+    return texto.replace(/\s+/g, ' ').trim();
+  }
+
+  tipoAlerta(alerta: any): string {
+    return this.textoLimpo(alerta?.tipo || 'INFO');
+  }
+
+  alertaQueryParams(alerta: any): any {
+    const servicoTexto = this.textoLimpo(alerta?.servico || '').toLowerCase();
+    const tipo = alerta?.tipo || '';
+
+    if (servicoTexto.includes('api insercao') || servicoTexto.includes('pedido')) {
+      return { aba: 'operacionais', servico: 'pedidos', tipo: tipo || 'ERRO_LOG', status: 'ERRO' };
+    }
+
+    if (servicoTexto.includes('geracao')) {
+      return { aba: 'operacionais', servico: 'geracao', tipo: tipo || 'ERRO_LOG', status: 'ERRO' };
+    }
+
+    if (servicoTexto.includes('exclusao')) {
+      return { aba: 'operacionais', servico: 'exclusao', tipo: tipo || 'ERRO_LOG', status: 'ERRO' };
+    }
+
+    return { aba: 'operacionais', tipo: tipo || undefined, status: alerta?.status || 'ERRO', search: this.textoLimpo(alerta?.mensagem || alerta?.servico || '') };
+  }
+
+  private definirPeriodoPadrao(): void {
+    if (this.dataInicial || this.dataFinal) return;
+
+    const hoje = new Date();
+    const ano = hoje.getFullYear();
+    const mes = hoje.getMonth();
+    const primeiroDia = new Date(ano, mes, 1);
+    const ultimoDia = new Date(ano, mes + 1, 0);
+
+    this.dataInicial = this.formatarInputData(primeiroDia);
+    this.dataFinal = this.formatarInputData(ultimoDia);
+    this.atualizarPeriodoLabel();
+  }
+
+  private formatarInputData(data: Date): string {
+    const ano = data.getFullYear();
+    const mes = String(data.getMonth() + 1).padStart(2, '0');
+    const dia = String(data.getDate()).padStart(2, '0');
+    return `${ano}-${mes}-${dia}`;
   }
 
   private atualizarPeriodoLabel(): void {

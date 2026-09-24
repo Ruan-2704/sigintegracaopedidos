@@ -69,7 +69,8 @@ export class LogsComponent implements OnInit {
 
   private definirAbaInicial(): void {
     const path = window.location.pathname.toLowerCase();
-    const aba = new URLSearchParams(window.location.search).get('aba');
+    const params = new URLSearchParams(window.location.search);
+    const aba = params.get('aba');
 
     if (path.includes('/auditoria') || aba === 'acoes' || aba === 'auditoria') {
       this.abaAtiva = 'auditoria';
@@ -77,7 +78,18 @@ export class LogsComponent implements OnInit {
       this.abaAtiva = 'cron';
     } else if (aba === 'pedidos-api') {
       this.abaAtiva = 'pedidos-api';
+    } else if (aba === 'operacionais') {
+      this.abaAtiva = 'operacionais';
     }
+
+    this.filtro = params.get('search') || this.filtro;
+    this.servico = params.get('servico') || this.servico;
+    this.tipo = params.get('tipo') || this.tipo;
+    this.status = params.get('status') || this.status;
+    this.dataInicio = params.get('dataInicio') || this.dataInicio;
+    this.dataFim = params.get('dataFim') || this.dataFim;
+    this.filtroPedidosApi = params.get('pedidoSearch') || params.get('searchPedidos') || this.filtroPedidosApi;
+    this.rastreioPedidosApi = params.get('rastreio') || this.rastreioPedidosApi;
   }
 
   private carregarDadosAba(force = false): void {
