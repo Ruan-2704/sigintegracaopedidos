@@ -47,6 +47,21 @@
   margin-bottom: 14px;
 }
 
+
+.validator-header {
+  align-items: center;
+  gap: 16px;
+}
+
+.validator-header__text {
+  min-width: 220px;
+}
+
+.validator-header__actions {
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
 .card-header h3,
 .result-summary h3,
 .section-block h4 {
@@ -134,12 +149,14 @@ select:focus {
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 14px;
 }
 
 .btn-primary,
-.btn-secondary {
+.btn-secondary,
+.btn-success {
   border: 0;
   border-radius: 10px;
   cursor: pointer;
@@ -163,6 +180,13 @@ select:focus {
   padding: 10px 14px;
 }
 
+.btn-success {
+  background: #16a34a;
+  color: #fff;
+  padding: 11px 16px;
+  box-shadow: 0 8px 16px rgba(22, 163, 74, .16);
+}
+
 button:disabled {
   opacity: .55;
   cursor: not-allowed;
@@ -175,6 +199,59 @@ button:disabled {
   padding: 12px 14px;
   border-radius: 12px;
   font-weight: 700;
+}
+
+.resend-result {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  margin-top: 14px;
+  border: 1px solid #fed7aa;
+  border-radius: 14px;
+  padding: 14px;
+  background: #fff7ed;
+}
+
+.resend-result.ok {
+  border-color: #bbf7d0;
+  background: #ecfdf5;
+}
+
+.resend-result h3 {
+  margin: 3px 0 0;
+  color: #0f172a;
+}
+
+.resend-result p {
+  margin: 6px 0 0;
+  color: #475569;
+}
+
+.resend-meta {
+  display: grid;
+  align-content: center;
+  justify-items: end;
+  gap: 2px;
+  color: #64748b;
+  font-weight: 800;
+}
+
+.resend-meta strong {
+  color: var(--sig-blue);
+  font-size: 24px;
+}
+
+.resend-result details {
+  grid-column: 1 / -1;
+}
+
+.resend-result pre {
+  max-height: 220px;
+  overflow: auto;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
 }
 
 .result-summary {
@@ -243,10 +320,36 @@ button:disabled {
   display: block;
   color: #64748b;
   margin-top: 4px;
+  font-weight: 800;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .issue p {
   margin: 6px 0 0;
+}
+
+.issue-meta {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+}
+
+.issue-meta span {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 9px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.issue-meta b {
+  color: #0f172a;
 }
 
 .badge {
@@ -323,5 +426,17 @@ pre {
 
   textarea {
     min-height: 360px;
+  }
+}
+
+@media (max-width: 980px) {
+  .validator-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .validator-header__actions {
+    justify-content: flex-start;
+    width: 100%;
   }
 }

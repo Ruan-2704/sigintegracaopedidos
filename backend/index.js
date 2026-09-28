@@ -858,6 +858,88 @@ function postJson(urlDestino, payload, headers = {}) {
   });
 }
 
+function normalizarIntegradoraPedido(payload = {}) {
+  const info = payload?.informacoes || payload || {};
+  const origem = String(info.integradora || payload.integradora || '').trim().toLowerCase();
+
+  if (origem.includes('smart')) return 'SMART';
+  if (origem.includes('cote') || origem.includes('cotefacil')) return 'COTEFACIL';
+
+  return '';
+}
+
+async function credenciaisPedidosApi(payload = {}, opcoes = {}) {
+  const integradora = String(opcoes.integradora || '').trim().toUpperCase() || normalizarIntegradoraPedido(payload);
+  const usernamePadrao =
+    integradora === 'SMART'
+      ? 'sigsmart@sigpharma.com.br'
+      : integradora === 'COTEFACIL'
+        ? 'sigcotefacil@sigpharma.com.br'
+        : '';
+
+  const usernameInformado = String(opcoes.username || '').trim();
+  const tokenInformado = String(opcoes.accesstoken || '').trim();
+
+  if (usernameInformado && tokenInformado) {
+    return {
+      username: usernameInformado,
+      accesstoken: tokenInformado,
+      integradora,
+      origem: 'request',
+    };
+  }
+
+  const usernamesConsulta = Array.from(new Set([usernameInformado, usernamePadrao].filter(Boolean)));
+
+  for (const usernameConsulta of usernamesConsulta) {
+    try {
+      const [rows] = await pool.query(
+        `
+          SELECT Username, accesstoken
+          FROM integracaopedidos.acessocotacao
+          WHERE LOWER(Username) = LOWER(?)
+          LIMIT 1
+        `,
+        [usernameConsulta]
+      );
+
+      const credencial = rows && rows[0];
+      const usernameBanco = credencial && (credencial.Username || credencial.username);
+      const tokenBanco = credencial && (credencial.accesstoken || credencial.accessToken || credencial.AccessToken);
+
+      if (usernameBanco && tokenBanco) {
+        return {
+          username: usernameBanco,
+          accesstoken: tokenBanco,
+          integradora,
+          origem: 'banco',
+        };
+      }
+    } catch (error) {
+      console.error('Falha ao buscar credenciais da API de pedidos no banco:', error.message || error);
+    }
+  }
+
+  const username =
+    usernameInformado ||
+    process.env[`PEDIDOS_API_USERNAME_${integradora}`] ||
+    process.env.PEDIDOS_API_USERNAME ||
+    usernamePadrao;
+
+  const accesstoken =
+    tokenInformado ||
+    process.env[`PEDIDOS_API_ACCESS_TOKEN_${integradora}`] ||
+    process.env.PEDIDOS_API_ACCESS_TOKEN ||
+    process.env.PEDIDOS_API_TOKEN;
+
+  return {
+    username,
+    accesstoken,
+    integradora,
+    origem: username && accesstoken ? 'env' : null,
+  };
+}
+
 function formatarArquivo(file) {
   const campanha = file.name.replace(/\.json$/i, '');
 
@@ -1901,6 +1983,47 @@ function schemasValidador() {
   return Object.keys(REDES_ALIAS);
 }
 
+async function buscarRedeClientePorCnpj(cnpjCliente) {
+  const cnpj = onlyDigitsLocal(cnpjCliente);
+  if (!cnpj) return null;
+
+  for (const schema of schemasValidador()) {
+    try {
+      const [rows] = await queryComTimeout(
+        `
+        SELECT
+          ? AS redeClienteAlias,
+          ? AS redeCliente,
+          FAR_NOME AS lojaCliente,
+          FAR_CNPJ AS cnpjClienteRede
+        FROM \`${schema}\`.farmacias
+        WHERE REPLACE(REPLACE(REPLACE(FAR_CNPJ, '.', ''), '/', ''), '-', '') = ?
+        LIMIT 1
+        `,
+        [schema, REDES_ALIAS[schema] || schema, cnpj]
+      );
+
+      if (rows?.[0]) return rows[0];
+    } catch (error) {
+      console.warn(`Falha ao consultar rede do cliente em ${schema}:`, error.message);
+    }
+  }
+
+  return null;
+}
+
+async function enriquecerPedidoComRedeCliente(pedido) {
+  if (!pedido) return null;
+
+  const redeCliente = await buscarRedeClientePorCnpj(pedido.cnpjCliente || pedido.CnpjCliente);
+  if (!redeCliente) return pedido;
+
+  return {
+    ...pedido,
+    ...redeCliente,
+  };
+}
+
 async function listarMetadadosValidador() {
   const schemas = schemasValidador();
   const placeholders = schemas.map(() => '?').join(', ');
@@ -2600,7 +2723,8 @@ app.get('/pedidos/:codigo', async (req, res) => {
       [req.params.codigo]
     );
 
-    return res.json({ success: true, data: rows[0] || null });
+    const data = await enriquecerPedidoComRedeCliente(rows[0] || null);
+    return res.json({ success: true, data });
   } catch (error) {
     if (error?.code !== 'ER_NO_SUCH_TABLE') {
       return erroResponse(res, 500, 'Erro ao buscar detalhe do evento do pedido', error);
@@ -2608,7 +2732,8 @@ app.get('/pedidos/:codigo', async (req, res) => {
 
     try {
       const [rows] = await queryComTimeout('SELECT *, \'INSERIDO\' AS status FROM pedidoconfirmaintegracao WHERE codigo = ? LIMIT 1', [req.params.codigo]);
-      return res.json({ success: true, data: rows[0] || null });
+      const data = await enriquecerPedidoComRedeCliente(rows[0] || null);
+      return res.json({ success: true, data });
     } catch (fallbackError) {
       return erroResponse(res, 500, 'Erro ao buscar detalhe do pedido', fallbackError);
     }
@@ -2889,6 +3014,98 @@ app.post('/validador/pedido', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     return erroResponse(res, 500, 'Erro ao validar pedido', error);
+  }
+});
+
+app.post('/validador/pedido/reenviar', authMiddleware, async (req, res) => {
+  const payload = req.body?.payload ?? req.body?.pedido ?? req.body;
+  const urlDestino = process.env.PEDIDOS_API_URL || 'http://35.215.217.184:8080/estoque/enviapedido';
+  const dados = extrairDadosPedido(payload);
+  const credenciais = await credenciaisPedidosApi(payload, req.body || {});
+
+  if (!credenciais.username || !credenciais.accesstoken) {
+    return erroResponse(
+      res,
+      400,
+      'Credenciais da API de pedidos nao encontradas para reenvio. Verifique integracaopedidos.acessocotacao ou configure PEDIDOS_API_USERNAME e PEDIDOS_API_ACCESS_TOKEN como fallback.'
+    );
+  }
+
+  try {
+    const response = await postJson(urlDestino, payload, {
+      username: credenciais.username,
+      accesstoken: credenciais.accesstoken,
+    });
+
+    let respostaFormatada;
+
+    try {
+      respostaFormatada = JSON.parse(response.text);
+    } catch {
+      respostaFormatada = response.text;
+    }
+
+    const mensagem =
+      respostaFormatada?.message ||
+      respostaFormatada?.mensagem ||
+      (response.ok ? 'Pedido reenviado com sucesso' : `Reenvio retornou status ${response.status}`);
+
+    try {
+      await pool.query(
+        `
+          INSERT INTO log_integracao_pedidos (origem, pedido_integrador, id_campanha, cnpj_cliente, status, mensagem, payload, erro)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          dados.origem || credenciais.integradora || null,
+          dados.pedidoIntegrador,
+          dados.idCampanha,
+          dados.cnpjCliente,
+          response.ok ? 'REENVIADO' : 'ERRO',
+          mensagem,
+          JSON.stringify(payload),
+          response.ok ? null : JSON.stringify(respostaFormatada),
+        ]
+      );
+    } catch (logError) {
+      console.error('Falha ao gravar log de reenvio:', logError);
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        ok: response.ok,
+        status: response.status,
+        mensagem,
+        resposta: respostaFormatada,
+        integradora: credenciais.integradora || null,
+        pedidoIntegrador: dados.pedidoIntegrador,
+        reenviadoEm: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    try {
+      await pool.query(
+        `
+          INSERT INTO log_integracao_pedidos (origem, pedido_integrador, id_campanha, cnpj_cliente, status, mensagem, payload, erro)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          dados.origem || credenciais.integradora || null,
+          dados.pedidoIntegrador,
+          dados.idCampanha,
+          dados.cnpjCliente,
+          'ERRO',
+          'Erro ao comunicar com a API de pedidos no reenvio',
+          JSON.stringify(payload),
+          error.stack || error.message,
+        ]
+      );
+    } catch (logError) {
+      console.error('Falha ao gravar log de erro no reenvio:', logError);
+    }
+
+    return erroResponse(res, 500, 'Erro ao reenviar pedido', error);
   }
 });
 

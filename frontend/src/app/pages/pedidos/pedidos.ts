@@ -14,6 +14,9 @@ export class PedidosComponent implements OnInit {
   abaDetalhe: 'resumo' | 'recebido' | 'sigrede' | 'retorno' | 'validacao' = 'resumo';
   copiadoAba: 'recebido' | 'sigrede' | 'retorno' | '' = '';
   validacoesSelecionado: any[] = [];
+  resultadoValidadorSelecionado: any = null;
+  validandoSelecionado = false;
+  erroValidacaoSelecionado = '';
   carregando = false;
   erro = '';
   filtro = '';
@@ -145,6 +148,9 @@ export class PedidosComponent implements OnInit {
   fechar(): void {
     this.selecionado = null;
     this.validacoesSelecionado = [];
+    this.resultadoValidadorSelecionado = null;
+    this.validandoSelecionado = false;
+    this.erroValidacaoSelecionado = '';
     this.abaDetalhe = 'resumo';
     this.cdr.detectChanges();
   }
@@ -196,6 +202,14 @@ export class PedidosComponent implements OnInit {
     return `${data.toLocaleDateString('pt-BR')} ${data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
   }
 
+  redeCliente(item: any): string {
+    return item?.redeCliente || item?.rede_cliente || item?.redeClienteNome || item?.rede || '-';
+  }
+
+  lojaCliente(item: any): string {
+    return item?.lojaCliente || item?.loja_cliente || item?.nomeCliente || item?.nome_cliente || '-';
+  }
+
   statusPedido(item: any): string {
     return String(item?.status || 'INSERIDO').toUpperCase();
   }
@@ -242,36 +256,63 @@ export class PedidosComponent implements OnInit {
 
   validarErro(): void {
     if (!this.selecionado) return;
+    this.resultadoValidadorSelecionado = null;
+    this.erroValidacaoSelecionado = '';
     this.validacoesSelecionado = this.montarValidacoes(this.selecionado);
     this.abaDetalhe = 'validacao';
     this.cdr.detectChanges();
+
+    const recebido = this.parseJsonSeguro(this.selecionado?.payloadRecebido || this.selecionado?.payload_recebido);
+
+    if (!recebido) {
+      this.erroValidacaoSelecionado = 'Payload recebido ausente ou nao esta em JSON valido. A validacao ficou limitada ao motivo, mensagem e retorno gravados.';
+      this.cdr.detectChanges();
+      return;
+    }
+
+    this.validandoSelecionado = true;
+    const redeFallback = this.redeValidacao(this.selecionado);
+
+    this.service.detectarRedePedido(recebido).subscribe({
+      next: (deteccao: any) => {
+        const data = deteccao?.data || deteccao || {};
+        this.executarValidadorPedido(recebido, data.rede || redeFallback);
+      },
+      error: () => this.executarValidadorPedido(recebido, redeFallback)
+    });
   }
 
-  montarValidacoes(item: any): any[] {
+  montarValidacoes(item: any, incluirPadrao = true): any[] {
     const checks: any[] = [];
     const motivo = String(item?.motivo || '').toLowerCase();
     const mensagem = String(item?.mensagem || '').toLowerCase();
     const recebido = this.parseJsonSeguro(item?.payloadRecebido || item?.payload_recebido);
-    const produtos = recebido?.produtos || [];
+    const retorno = this.parseJsonSeguro(item?.payloadRetorno || item?.payload_retorno);
+    const produtos =
+      recebido?.produtos ||
+      recebido?.Produtos ||
+      recebido?.informacoes?.produtos ||
+      recebido?.Informacoes?.Produtos ||
+      [];
 
     if (motivo.includes('fornecedor') || mensagem.includes('fornecedor')) {
-      checks.push({ nivel: 'erro', titulo: 'Fornecedor nao encontrado na campanha', detalhe: `Verifique se o CNPJ ${item.cnpjDistribuidor || item.CnpjDistribuidor || '-'} esta vinculado na campanha/OL ${item.idCampanha || item.IdCampanha || '-'}.` });
+      checks.push(this.comReferenciaCampo({ nivel: 'erro', titulo: 'Fornecedor nao encontrado na campanha', campo: 'informacoes.cnpjDistribuidor', valorAtual: item.cnpjDistribuidor || item.CnpjDistribuidor || '-', detalhe: `Verifique se o CNPJ esta vinculado na campanha/OL ${item.idCampanha || item.IdCampanha || '-'}.` }));
     }
 
     if (motivo.includes('farmacia') || mensagem.includes('farmacia')) {
-      checks.push({ nivel: 'erro', titulo: 'Farmacia nao encontrada na OL', detalhe: `Verifique se o CNPJ ${item.cnpjCliente || item.CnpjCliente || '-'} esta cadastrado na OL ${item.idOl || item.IdOL || '-'}.` });
+      checks.push(this.comReferenciaCampo({ nivel: 'erro', titulo: 'Farmacia nao encontrada na OL', campo: 'informacoes.cnpjCliente', valorAtual: item.cnpjCliente || item.CnpjCliente || '-', detalhe: `Verifique se o CNPJ esta cadastrado e vinculado na OL ${item.idOl || item.IdOL || '-'}.` }));
     }
 
     if (motivo.includes('campanha') || motivo.includes('rede')) {
-      checks.push({ nivel: 'erro', titulo: 'Campanha ou rede nao encontrada', detalhe: `Confira idCampanha=${item.idCampanha || item.IdCampanha || '-'} e idOL=${item.idOl || item.IdOL || '-'}.` });
+      checks.push(this.comReferenciaCampo({ nivel: 'erro', titulo: 'Campanha ou rede nao encontrada', campo: 'informacoes.idCampanha', valorAtual: item.idCampanha || item.IdCampanha || '-', detalhe: `Confira a campanha/OL informada e o codigo da operacao logistica ${item.idOl || item.IdOL || '-'}.` }));
     }
 
     if (motivo.includes('medicamento') || mensagem.includes('medicamento')) {
-      checks.push({ nivel: 'erro', titulo: 'Medicamento nao encontrado', detalhe: 'Revise os codigos dos produtos do payload recebido e o cadastro da OL na SIGREDE.' });
+      checks.push(this.comReferenciaCampo({ nivel: 'erro', titulo: 'Medicamento nao encontrado', campo: 'produtos.codigoProduto', detalhe: 'Revise os codigos dos produtos do payload recebido, EAN e o cadastro da OL na SIGREDE.' }));
     }
 
     if (this.statusPedido(item) === 'DUPLICADO') {
-      checks.push({ nivel: 'alerta', titulo: 'Pedido duplicado', detalhe: 'Esse pedido integrador ja consta no historico. Reenvie apenas se for uma nova tentativa com identificador ajustado.' });
+      checks.push(this.comReferenciaCampo({ nivel: 'alerta', titulo: 'Pedido duplicado', campo: 'informacoes.pedidoCotefacil', valorAtual: item.pedidoIntegrador || item.pedidoIntegradora || '-', detalhe: 'Esse pedido integrador ja consta no historico. Reenvie apenas se for uma nova tentativa com identificador ajustado.' }));
     }
 
     if (!item?.payloadRecebido && !item?.payload_recebido) {
@@ -285,15 +326,207 @@ export class PedidosComponent implements OnInit {
     if (Array.isArray(produtos)) {
       const semCodigo = produtos.filter((p: any) => !p.codigoProduto && !p.CodigoProduto);
       const semQuantidade = produtos.filter((p: any) => !p.qtdeSolicitada && !p.QuantidadeSolicitada);
-      if (semCodigo.length) checks.push({ nivel: 'erro', titulo: 'Produto sem codigo', detalhe: `${semCodigo.length} item(ns) sem codigoProduto.` });
-      if (semQuantidade.length) checks.push({ nivel: 'erro', titulo: 'Produto sem quantidade', detalhe: `${semQuantidade.length} item(ns) sem qtdeSolicitada.` });
+      if (semCodigo.length) checks.push(this.comReferenciaCampo({ nivel: 'erro', titulo: 'Produto sem codigo', campo: 'produtos[].codigoProduto', detalhe: `${semCodigo.length} item(ns) sem codigo do produto.`, amostra: semCodigo.slice(0, 3) }));
+      if (semQuantidade.length) checks.push(this.comReferenciaCampo({ nivel: 'erro', titulo: 'Produto sem quantidade', campo: 'produtos[].qtdeSolicitada', detalhe: `${semQuantidade.length} item(ns) sem quantidade solicitada.`, amostra: semQuantidade.slice(0, 3) }));
     }
 
-    if (!checks.length) {
+    const mensagemRetorno = this.mensagemRetornoApi(retorno);
+    if (mensagemRetorno) {
+      checks.push({
+        nivel: this.statusPedido(item) === 'DUPLICADO' ? 'alerta' : 'erro',
+        titulo: 'Retorno da API de pedidos',
+        detalhe: mensagemRetorno,
+        origem: 'payload_retorno'
+      });
+    }
+
+    if (!checks.length && incluirPadrao) {
       checks.push({ nivel: 'ok', titulo: 'Nenhum erro conhecido identificado automaticamente', detalhe: 'Revise mensagem, payload SIGREDE e retorno antes de reenviar.' });
     }
 
     return checks;
+  }
+
+  private executarValidadorPedido(payload: any, rede: string): void {
+    this.service.validarPedido(payload, { rede, validarBanco: true }).subscribe({
+      next: (res: any) => {
+        this.resultadoValidadorSelecionado = res?.data || res;
+        const validacoes = [
+          ...this.montarValidacoes(this.selecionado, false),
+          ...this.validacoesDoValidador(this.resultadoValidadorSelecionado)
+        ];
+        this.validacoesSelecionado = validacoes.length
+          ? validacoes
+          : [{ nivel: 'ok', titulo: 'Nenhum erro bloqueante identificado', detalhe: 'O payload passou nas validacoes disponiveis. Revise o retorno original antes de reenviar.' }];
+        this.validandoSelecionado = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.erroValidacaoSelecionado =
+          err?.error?.message ||
+          err?.error?.error ||
+          'Nao foi possivel executar a validacao completa no backend.';
+        this.validandoSelecionado = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private validacoesDoValidador(resultado: any): any[] {
+    return (resultado?.issues || []).map((issue: any) => this.comReferenciaCampo({
+      nivel: issue.severity === 'erro' ? 'erro' : issue.severity === 'aviso' ? 'alerta' : 'ok',
+      titulo: issue.message || issue.code || 'Validacao do pedido',
+      detalhe: issue.suggestion || 'Revise a informacao apontada pelo validador.',
+      campo: issue.field,
+      codigo: issue.code,
+      valorAtual: issue.valorAtual ?? issue.codigoProdutoAtual ?? issue.ean ?? issue.cnpjCliente ?? issue.cnpjDistribuidor,
+      valorSugerido: issue.valorSugerido ?? issue.codigoProdutoSugerido,
+      origem: 'validador_completo'
+    }));
+  }
+
+  private comReferenciaCampo(validacao: any): any {
+    const referencia = this.referenciaCampo(validacao?.campo);
+    return {
+      ...validacao,
+      campoTecnico: validacao?.campo,
+      campo: referencia.nome,
+      tabela: referencia.tabela,
+      coluna: referencia.coluna,
+      referenciaBanco: referencia.referenciaBanco
+    };
+  }
+
+  private referenciaCampo(campo?: string): any {
+    const original = String(campo || '').trim();
+    const normalizado = original
+      .replace(/\[\d+\]/g, '[]')
+      .replace(/\s+/g, '')
+      .toLowerCase();
+
+    const referencias: Record<string, any> = {
+      'informacoes.cnpjcliente': {
+        nome: 'CNPJ da loja/cliente',
+        tabela: 'farmacias',
+        coluna: 'FAR_CNPJ',
+        referenciaBanco: 'farmacias.FAR_CNPJ; farmacias_opl.FAR_CODIGO'
+      },
+      'informacoes.cnpjdistribuidor': {
+        nome: 'CNPJ do fornecedor/distribuidor',
+        tabela: 'fornecedores',
+        coluna: 'FOR_CNPJ',
+        referenciaBanco: 'fornecedores.FOR_CNPJ; fornecedores_participa_operacao_logistica.FOR_CODIGO'
+      },
+      'informacoes.idcampanha': {
+        nome: 'Codigo da campanha/OL',
+        tabela: 'operacoes_logisticas',
+        coluna: 'OPL_CODIGO',
+        referenciaBanco: 'operacoes_logisticas.OPL_CODIGO'
+      },
+      'informacoes.idol': {
+        nome: 'Codigo da operacao logistica',
+        tabela: 'operacoes_logisticas',
+        coluna: 'OPL_CODIGO',
+        referenciaBanco: 'operacoes_logisticas.OPL_CODIGO'
+      },
+      'informacoes.codigoprazocd': {
+        nome: 'Condicao de pagamento',
+        tabela: 'operacoes_logisticas',
+        coluna: 'OPL_DESCRICAO',
+        referenciaBanco: 'operacoes_logisticas.OPL_DESCRICAO/DESCRICAO/NOME'
+      },
+      'informacoes.pedidocotefacil': {
+        nome: 'Numero do pedido da integradora',
+        tabela: 'integracao_pedido_evento',
+        coluna: 'pedido_integrador',
+        referenciaBanco: 'integracao_pedido_evento.pedido_integrador; pedidoconfirmaintegracao.pedidoIntegradora'
+      },
+      'informacoes.pedidointegrador': {
+        nome: 'Numero do pedido da integradora',
+        tabela: 'integracao_pedido_evento',
+        coluna: 'pedido_integrador',
+        referenciaBanco: 'integracao_pedido_evento.pedido_integrador; pedidoconfirmaintegracao.pedidoIntegradora'
+      },
+      'produtos.codigoproduto': {
+        nome: 'Codigo do produto/medicamento',
+        tabela: 'medicamentos',
+        coluna: 'MED_CODIGO',
+        referenciaBanco: 'medicamentos.MED_CODIGO; medicamentos_opl.MED_CODIGO'
+      },
+      'produtos[].codigoproduto': {
+        nome: 'Codigo do produto/medicamento',
+        tabela: 'medicamentos',
+        coluna: 'MED_CODIGO',
+        referenciaBanco: 'medicamentos.MED_CODIGO; medicamentos_opl.MED_CODIGO'
+      },
+      'produtos.ean': {
+        nome: 'EAN/codigo de barras do produto',
+        tabela: 'medicamentos',
+        coluna: 'MED_COD_BARRAS',
+        referenciaBanco: 'medicamentos.MED_COD_BARRAS'
+      },
+      'produtos[].ean': {
+        nome: 'EAN/codigo de barras do produto',
+        tabela: 'medicamentos',
+        coluna: 'MED_COD_BARRAS',
+        referenciaBanco: 'medicamentos.MED_COD_BARRAS'
+      },
+      'produtos.qtdesolicitada': {
+        nome: 'Quantidade solicitada do item',
+        tabela: 'payload do pedido',
+        coluna: 'qtdeSolicitada',
+        referenciaBanco: 'produtos[].qtdeSolicitada'
+      },
+      'produtos[].qtdesolicitada': {
+        nome: 'Quantidade solicitada do item',
+        tabela: 'payload do pedido',
+        coluna: 'qtdeSolicitada',
+        referenciaBanco: 'produtos[].qtdeSolicitada'
+      }
+    };
+
+    if (referencias[normalizado]) return referencias[normalizado];
+
+    if (normalizado.startsWith('produtos[].valor') || normalizado.startsWith('produtos.valor')) {
+      return {
+        nome: 'Valor comercial do produto',
+        tabela: 'payload do pedido',
+        coluna: original.split('.').pop() || original,
+        referenciaBanco: original || 'produtos[]'
+      };
+    }
+
+    return {
+      nome: original || 'Informacao do pedido',
+      tabela: 'payload do pedido',
+      coluna: original || '-',
+      referenciaBanco: original || '-'
+    };
+  }
+
+  private redeValidacao(item: any): string {
+    const rede = item?.redeClienteAlias || item?.rede_alias || item?.rede;
+    return /^[a-z0-9_]+$/i.test(String(rede || '')) ? String(rede) : 'redecomprecerto';
+  }
+
+  private mensagemRetornoApi(retorno: any): string {
+    if (!retorno) return '';
+    if (typeof retorno === 'string') return retorno;
+
+    const candidatos = [
+      retorno.message,
+      retorno.mensagem,
+      retorno.error,
+      retorno.erro,
+      retorno.detail,
+      retorno.detalhe,
+      retorno?.data?.message,
+      retorno?.data?.mensagem,
+      retorno?.body?.message,
+      retorno?.body?.mensagem
+    ].filter(Boolean);
+
+    return candidatos.length ? String(candidatos[0]) : '';
   }
 
   formatarJson(valor: any): string {

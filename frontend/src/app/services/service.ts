@@ -314,6 +314,13 @@ export class IntegracaoService {
     });
   }
 
+  reenviarPedido(payload: any, options: { integradora?: string } = {}): Observable<ApiResponse<any>> {
+    return this.postRaw<ApiResponse<any>>('/validador/pedido/reenviar', {
+      payload,
+      integradora: options.integradora
+    });
+  }
+
   getValidadorMetadados(): Observable<ApiResponse<any>> {
     return this.getRaw<ApiResponse<any>>('/validador/metadados');
   }

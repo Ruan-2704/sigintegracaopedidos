@@ -1,7 +1,7 @@
 .shell { min-height: 100vh; background: var(--sig-bg); color: var(--sig-text); }
 .topbar { height: 64px; background: var(--sig-blue); color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 26px; box-shadow: 0 4px 13px rgba(0,0,0,.26); position: sticky; top: 0; z-index: 50; }
 .brand-inline { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.menu-toggle { width: 37px; height: 37px; border: 1px solid rgba(255,255,255,.28); display: grid; place-items: center; border-radius: 6px; background: rgba(255,255,255,.08); color: #fff; font-size: 24px; cursor: pointer; }
+.menu-toggle { width: 37px; height: 37px; border: 1px solid rgba(255,255,255,.28); display: grid; place-items: center; border-radius: 6px; background: rgba(255,255,255,.08); color: #fff; font-size: 18px; font-weight: 900; cursor: pointer; }
 .brand-mark { width: 42px; height: 42px; border-radius: 999px; background: #fff; color: var(--sig-blue); display: grid; place-items: center; font-weight: 900; border: 3px solid var(--sig-green); box-shadow: 0 7px 16px rgba(0,0,0,.16); }
 .brand-mark span { font-size: 13px; letter-spacing: -.04em; }
 .brand-text strong { display: block; font-size: 16px; font-weight: 900; line-height: 1.05; white-space: nowrap; }
@@ -22,9 +22,10 @@
 .sidebar-title small { display: block; margin-top: 3px; font-size: 12px; color: rgba(255,255,255,.78); }
 .nav { padding: 13px 10px 16px; display: grid; gap: 2px; overflow: auto; }
 .nav a { display: flex; align-items: center; gap: 14px; min-height: 52px; color: #3f3f46; text-decoration: none; padding: 0 16px; border-radius: 4px; font-weight: 500; font-size: 14px; border-bottom: 1px solid #eef0f4; }
-.nav a span { width: 22px; text-align: center; color: #667085; font-size: 15px; }
+.nav a span { width: 24px; height: 24px; border-radius: 7px; display: inline-grid; place-items: center; color: var(--sig-blue); background: #eef2ff; font-size: 12px; font-weight: 900; flex: 0 0 24px; }
 .nav a:hover { background: #f5f5f5; }
 .nav a.active { background: #eeeeee; color: #262626; font-weight: 700; box-shadow: inset 4px 0 0 var(--sig-blue); }
+.nav a.active span { background: var(--sig-blue); color: #fff; }
 .sidebar-footer { margin-top: auto; padding: 14px; }
 .mini-status { display: flex; gap: 12px; align-items: flex-start; border-radius: 10px; padding: 13px; background: #f8fafc; border: 1px solid var(--sig-border); }
 .mini-status strong { display: block; color: var(--sig-blue-dark); }

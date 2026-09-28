@@ -9,13 +9,17 @@ import { IntegracaoService } from '../../services/service';
 export class ValidadorPedidoComponent implements OnInit {
   jsonPedido = '';
   rede = 'redecomprecerto';
+  integradoraReenvio = 'SMART';
   validarBanco = true;
   carregando = false;
+  reenviando = false;
   carregandoMetadados = false;
   detectandoRede = false;
   erro = '';
+  erroReenvio = '';
   avisoDeteccao = '';
   resultado: any = null;
+  resultadoReenvio: any = null;
   redes: any[] = this.redesFallback();
   private detectarTimer: any = null;
 
@@ -51,6 +55,8 @@ export class ValidadorPedidoComponent implements OnInit {
   onJsonChange(value: string): void {
     this.jsonPedido = value;
     this.resultado = null;
+    this.resultadoReenvio = null;
+    this.erroReenvio = '';
     this.avisoDeteccao = '';
 
     clearTimeout(this.detectarTimer);
@@ -144,7 +150,7 @@ export class ValidadorPedidoComponent implements OnInit {
       validarBanco: this.validarBanco
     }).subscribe({
       next: (res: any) => {
-        this.resultado = res.data || res;
+        this.resultado = this.prepararResultado(res.data || res);
         this.carregando = false;
         this.cdr.detectChanges();
       },
@@ -156,10 +162,49 @@ export class ValidadorPedidoComponent implements OnInit {
     });
   }
 
+  reenviarPedido(): void {
+    this.erro = '';
+    this.erroReenvio = '';
+    this.resultadoReenvio = null;
+
+    let payload: any;
+
+    try {
+      payload = JSON.parse(this.jsonPedido || '{}');
+    } catch (error: any) {
+      this.erroReenvio = `JSON invalido: ${error.message}`;
+      this.cdr.detectChanges();
+      return;
+    }
+
+    this.reenviando = true;
+
+    this.service.reenviarPedido(payload, { integradora: this.integradoraReenvio }).subscribe({
+      next: (res: any) => {
+        this.resultadoReenvio = res.data || res;
+        this.reenviando = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        const data = err?.error?.data || null;
+        this.resultadoReenvio = data;
+        this.erroReenvio =
+          err?.error?.message ||
+          err?.error?.error ||
+          data?.mensagem ||
+          'Erro ao reenviar pedido.';
+        this.reenviando = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
   limpar(): void {
     this.jsonPedido = '';
     this.resultado = null;
+    this.resultadoReenvio = null;
     this.erro = '';
+    this.erroReenvio = '';
     this.avisoDeteccao = '';
     this.cdr.detectChanges();
   }
@@ -212,6 +257,137 @@ export class ValidadorPedidoComponent implements OnInit {
     if (severity === 'erro') return 'danger';
     if (severity === 'aviso') return 'warn';
     return 'info';
+  }
+
+  private prepararResultado(resultado: any): any {
+    if (!resultado) return resultado;
+
+    return {
+      ...resultado,
+      issues: (resultado.issues || []).map((issue: any) => this.comReferenciaCampo(issue))
+    };
+  }
+
+  private comReferenciaCampo(issue: any): any {
+    const referencia = this.referenciaCampo(issue?.field);
+
+    return {
+      ...issue,
+      fieldTecnico: issue?.field,
+      fieldLabel: referencia.nome,
+      tabela: referencia.tabela,
+      coluna: referencia.coluna,
+      referenciaBanco: referencia.referenciaBanco,
+      valorAtual: issue?.valorAtual ?? issue?.codigoProdutoAtual ?? issue?.ean ?? issue?.cnpjCliente ?? issue?.cnpjDistribuidor,
+      valorSugerido: issue?.valorSugerido ?? issue?.codigoProdutoSugerido
+    };
+  }
+
+  private referenciaCampo(campo?: string): any {
+    const original = String(campo || '').trim();
+    const normalizado = original
+      .replace(/\[\d+\]/g, '[]')
+      .replace(/\s+/g, '')
+      .toLowerCase();
+
+    const referencias: Record<string, any> = {
+      'informacoes.cnpjcliente': {
+        nome: 'CNPJ da loja/cliente',
+        tabela: 'farmacias',
+        coluna: 'FAR_CNPJ',
+        referenciaBanco: 'farmacias.FAR_CNPJ; farmacias_opl.FAR_CODIGO'
+      },
+      'informacoes.cnpjdistribuidor': {
+        nome: 'CNPJ do fornecedor/distribuidor',
+        tabela: 'fornecedores',
+        coluna: 'FOR_CNPJ',
+        referenciaBanco: 'fornecedores.FOR_CNPJ; fornecedores_participa_operacao_logistica.FOR_CODIGO'
+      },
+      'informacoes.idcampanha': {
+        nome: 'Codigo da campanha/OL',
+        tabela: 'operacoes_logisticas',
+        coluna: 'OPL_CODIGO',
+        referenciaBanco: 'operacoes_logisticas.OPL_CODIGO'
+      },
+      'informacoes.idol': {
+        nome: 'Codigo da operacao logistica',
+        tabela: 'operacoes_logisticas',
+        coluna: 'OPL_CODIGO',
+        referenciaBanco: 'operacoes_logisticas.OPL_CODIGO'
+      },
+      'informacoes.codigoprazocd': {
+        nome: 'Condicao de pagamento',
+        tabela: 'operacoes_logisticas',
+        coluna: 'OPL_DESCRICAO',
+        referenciaBanco: 'operacoes_logisticas.OPL_DESCRICAO/DESCRICAO/NOME'
+      },
+      'informacoes.pedidocotefacil': {
+        nome: 'Numero do pedido da integradora',
+        tabela: 'integracao_pedido_evento',
+        coluna: 'pedido_integrador',
+        referenciaBanco: 'integracao_pedido_evento.pedido_integrador; pedidoconfirmaintegracao.pedidoIntegradora'
+      },
+      'informacoes.pedidointegrador': {
+        nome: 'Numero do pedido da integradora',
+        tabela: 'integracao_pedido_evento',
+        coluna: 'pedido_integrador',
+        referenciaBanco: 'integracao_pedido_evento.pedido_integrador; pedidoconfirmaintegracao.pedidoIntegradora'
+      },
+      'produtos.codigoproduto': {
+        nome: 'Codigo do produto/medicamento',
+        tabela: 'medicamentos',
+        coluna: 'MED_CODIGO',
+        referenciaBanco: 'medicamentos.MED_CODIGO; medicamentos_opl.MED_CODIGO'
+      },
+      'produtos[].codigoproduto': {
+        nome: 'Codigo do produto/medicamento',
+        tabela: 'medicamentos',
+        coluna: 'MED_CODIGO',
+        referenciaBanco: 'medicamentos.MED_CODIGO; medicamentos_opl.MED_CODIGO'
+      },
+      'produtos.ean': {
+        nome: 'EAN/codigo de barras do produto',
+        tabela: 'medicamentos',
+        coluna: 'MED_COD_BARRAS',
+        referenciaBanco: 'medicamentos.MED_COD_BARRAS'
+      },
+      'produtos[].ean': {
+        nome: 'EAN/codigo de barras do produto',
+        tabela: 'medicamentos',
+        coluna: 'MED_COD_BARRAS',
+        referenciaBanco: 'medicamentos.MED_COD_BARRAS'
+      },
+      'produtos.qtdesolicitada': {
+        nome: 'Quantidade solicitada do item',
+        tabela: 'payload do pedido',
+        coluna: 'qtdeSolicitada',
+        referenciaBanco: 'produtos[].qtdeSolicitada'
+      },
+      'produtos[].qtdesolicitada': {
+        nome: 'Quantidade solicitada do item',
+        tabela: 'payload do pedido',
+        coluna: 'qtdeSolicitada',
+        referenciaBanco: 'produtos[].qtdeSolicitada'
+      }
+    };
+
+    if (referencias[normalizado]) return referencias[normalizado];
+
+    if (normalizado.startsWith('produtos[].valor') || normalizado.startsWith('produtos.valor')) {
+      return {
+        nome: 'Valor comercial do produto',
+        tabela: 'payload do pedido',
+        coluna: original.split('.').pop() || original,
+        referenciaBanco: original || 'produtos[]'
+      };
+    }
+
+    return {
+      nome: original || 'Informacao do pedido',
+      tabela: 'payload do pedido',
+      coluna: original || '-',
+      referenciaBanco: original || '-'
+    };
   }
 
   trackIssue(index: number, item: any): string {

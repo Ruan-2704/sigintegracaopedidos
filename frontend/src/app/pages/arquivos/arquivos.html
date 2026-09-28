@@ -1,7 +1,7 @@
 <div class="page-title">
   <div>
     <h2>Arquivos Gerados</h2>
-    <p>Arquivos JSON gerados e enviados para o bucket da integração.</p>
+    <p>Arquivos JSON gerados e enviados para o bucket da integracao.</p>
   </div>
   <button type="button" class="btn-primary" (click)="carregar(true)" [disabled]="carregando">{{ carregando ? 'Atualizando...' : 'Atualizar' }}</button>
 </div>
@@ -12,11 +12,11 @@
     <input type="text" placeholder="Campanha, nome do arquivo ou data" [(ngModel)]="filtro" (keyup.enter)="aplicarFiltro()" />
   </div>
   <div class="field small-field">
-    <label>Itens por página</label>
+    <label>Itens por pagina</label>
     <select [(ngModel)]="itensPorPagina" (change)="alterarItensPorPagina()">
-      <option [ngValue]="10">10</option>
-      <option [ngValue]="20">20</option>
       <option [ngValue]="50">50</option>
+      <option [ngValue]="100">100</option>
+      <option [ngValue]="200">200</option>
     </select>
   </div>
   <div class="filter-actions">
@@ -38,12 +38,12 @@
   <table>
     <thead>
       <tr>
-        <th>Arquivo</th>
-        <th>Campanha</th>
-        <th>Tamanho</th>
-        <th>Criado em</th>
-        <th>Atualizado em</th>
-        <th>Ações</th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('nomeArquivo')">Arquivo <span>{{ indicadorOrdenacao('nomeArquivo') }}</span></button></th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('campanha')">Campanha <span>{{ indicadorOrdenacao('campanha') }}</span></button></th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('tamanhoBytes')">Tamanho <span>{{ indicadorOrdenacao('tamanhoBytes') }}</span></button></th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('criadoEm')">Criado em <span>{{ indicadorOrdenacao('criadoEm') }}</span></button></th>
+        <th><button type="button" class="sort-btn" (click)="ordenarPor('atualizadoEm')">Atualizado em <span>{{ indicadorOrdenacao('atualizadoEm') }}</span></button></th>
+        <th>Acoes</th>
       </tr>
     </thead>
     <tbody>
@@ -63,8 +63,8 @@
   </table>
   <div class="pagination">
     <button type="button" class="btn-secondary" (click)="paginaAnterior()" [disabled]="paginaAtual === 1">Anterior</button>
-    <span>Página {{ paginaAtual }} de {{ totalPaginas }}</span>
-    <button type="button" class="btn-secondary" (click)="proximaPagina()" [disabled]="paginaAtual === totalPaginas">Próxima</button>
+    <span>Pagina {{ paginaAtual }} de {{ totalPaginas }}</span>
+    <button type="button" class="btn-secondary" (click)="proximaPagina()" [disabled]="paginaAtual === totalPaginas">Proxima</button>
   </div>
 </div>
 
@@ -74,7 +74,7 @@
       <div><h2>{{ selecionado.nomeArquivo }}</h2><p>Campanha {{ selecionado.campanha }}</p></div>
       <button type="button" class="btn-secondary" (click)="fechar()">Fechar</button>
     </div>
-    <div *ngIf="carregandoPreview" class="state-card">Carregando prévia do arquivo...</div>
+    <div *ngIf="carregandoPreview" class="state-card">Carregando previa do arquivo...</div>
     <pre *ngIf="!carregandoPreview">{{ previewArquivo | json }}</pre>
   </div>
 </div>

@@ -8,13 +8,27 @@
 
 <div class="validator-grid">
   <section class="card input-card">
-    <div class="card-header">
-      <div>
+    <div class="card-header validator-header">
+      <div class="validator-header__text">
         <h3>JSON do pedido</h3>
-        <p>Use o payload recebido da Cotefácil/SmartPed ou o JSON gravado no log.</p>
+        <p>Use o payload recebido da Cotefacil/SmartPed ou o JSON gravado no log.</p>
       </div>
 
-      <button class="btn-secondary" type="button" (click)="carregarExemplo()">Exemplo</button>
+      <div class="validator-header__actions actions">
+        <button class="btn-primary" type="button" (click)="validar()" [disabled]="carregando">
+          {{ carregando ? 'Validando...' : 'Validar pedido' }}
+        </button>
+
+        <button class="btn-success" type="button" (click)="reenviarPedido()" [disabled]="carregando || reenviando || !jsonPedido.trim()">
+          {{ reenviando ? 'Reenviando...' : 'Reenviar pedido' }}
+        </button>
+
+        <button class="btn-secondary" type="button" (click)="limpar()" [disabled]="carregando">
+          Limpar
+        </button>
+
+        <button class="btn-secondary" type="button" (click)="carregarExemplo()">Exemplo</button>
+      </div>
     </div>
 
     <div class="form-row">
@@ -31,6 +45,13 @@
         <input type="checkbox" [(ngModel)]="validarBanco" />
         Validar vínculos no banco
       </label>
+      <label>
+        Integradora do reenvio
+        <select [(ngModel)]="integradoraReenvio">
+          <option value="SMART">SmartPed</option>
+          <option value="COTEFACIL">Cotefacil</option>
+        </select>
+      </label>
     </div>
 
     <div class="detect-box" *ngIf="detectandoRede || avisoDeteccao || carregandoMetadados">
@@ -44,17 +65,26 @@
       placeholder="Cole aqui o JSON completo do pedido..."
     ></textarea>
 
-    <div class="actions">
-      <button class="btn-primary" type="button" (click)="validar()" [disabled]="carregando">
-        {{ carregando ? 'Validando...' : 'Validar pedido' }}
-      </button>
-
-      <button class="btn-secondary" type="button" (click)="limpar()" [disabled]="carregando">
-        Limpar
-      </button>
-    </div>
-
     <div class="error-box" *ngIf="erro">{{ erro }}</div>
+    <div class="error-box" *ngIf="erroReenvio">{{ erroReenvio }}</div>
+
+    <div class="resend-result" *ngIf="resultadoReenvio" [class.ok]="resultadoReenvio.ok" [class.bad]="!resultadoReenvio.ok">
+      <div>
+        <span class="eyebrow">Reenvio</span>
+        <h3>{{ resultadoReenvio.ok ? 'Pedido reenviado com sucesso' : 'Reenvio retornou erro' }}</h3>
+        <p>{{ resultadoReenvio.mensagem || 'Resposta recebida da API de pedidos.' }}</p>
+      </div>
+
+      <div class="resend-meta">
+        <span>Status HTTP</span>
+        <strong>{{ resultadoReenvio.status || '-' }}</strong>
+      </div>
+
+      <details *ngIf="resultadoReenvio.resposta">
+        <summary>Resposta da API</summary>
+        <pre>{{ resultadoReenvio.resposta | json }}</pre>
+      </details>
+    </div>
   </section>
 
   <section class="card result-card" *ngIf="resultado">
@@ -88,7 +118,18 @@
 
         <div>
           <strong>{{ issue.message }}</strong>
-          <small>{{ issue.field }} • {{ issue.code }}</small>
+          <div class="issue-meta">
+            <span *ngIf="issue.fieldLabel">Informacao: <b>{{ issue.fieldLabel }}</b></span>
+            <span *ngIf="issue.tabela">Tabela: <b>{{ issue.tabela }}</b></span>
+            <span *ngIf="issue.coluna">Coluna: <b>{{ issue.coluna }}</b></span>
+            <span *ngIf="issue.valorAtual">Valor recebido: <b>{{ issue.valorAtual }}</b></span>
+            <span *ngIf="issue.valorSugerido">Valor esperado/sugerido: <b>{{ issue.valorSugerido }}</b></span>
+            <span *ngIf="issue.code">Codigo: <b>{{ issue.code }}</b></span>
+          </div>
+          <small *ngIf="issue.referenciaBanco">
+            Referencia: {{ issue.referenciaBanco }}
+            <ng-container *ngIf="issue.fieldTecnico"> | payload: {{ issue.fieldTecnico }}</ng-container>
+          </small>
           <p>{{ issue.suggestion }}</p>
         </div>
       </div>

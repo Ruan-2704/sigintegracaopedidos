@@ -306,6 +306,13 @@ tbody tr:hover {
   color: #991b1b;
 }
 
+.state-card.compact {
+  padding: 13px 14px;
+  border-radius: 10px;
+  box-shadow: none;
+  font-weight: 800;
+}
+
 .pagination {
   display: flex;
   align-items: center;
@@ -422,6 +429,14 @@ tbody tr:hover {
   word-break: break-word;
 }
 
+.detail-card-stack small {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
 .message-box p {
   margin: 8px 0 0;
   color: #475569;
@@ -451,6 +466,44 @@ tbody tr:hover {
   gap: 10px;
 }
 
+.validation-summary {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(110px, .75fr));
+  gap: 10px;
+}
+
+.validation-summary > div {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.validation-summary > div.ok {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.validation-summary > div.erro {
+  background: #fff7f7;
+  border-color: #fecaca;
+}
+
+.validation-summary label {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 900;
+  letter-spacing: .04em;
+  margin-bottom: 5px;
+}
+
+.validation-summary strong {
+  color: #0f172a;
+  line-height: 1.35;
+}
+
 .validation-item {
   border-left: 5px solid #64748b;
 }
@@ -478,6 +531,107 @@ tbody tr:hover {
   margin: 6px 0 0;
   color: #475569;
   line-height: 1.45;
+}
+
+.validation-meta {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+}
+
+.validation-meta span {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 9px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.validation-meta b {
+  color: #0f172a;
+}
+
+.field-reference {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.validation-item details {
+  margin-top: 10px;
+}
+
+.validation-item details summary {
+  cursor: pointer;
+  color: var(--sig-blue);
+  font-weight: 900;
+}
+
+.validation-item pre {
+  min-height: 0;
+  max-height: 240px;
+  margin: 10px 0 0;
+  padding: 12px;
+}
+
+.validation-db {
+  display: grid;
+  gap: 10px;
+}
+
+.validation-db h4 {
+  margin: 4px 0 0;
+  color: var(--sig-blue);
+}
+
+.db-check {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 5px solid #64748b;
+  border-radius: 10px;
+  padding: 13px;
+}
+
+.db-check.ok {
+  border-left-color: #16a34a;
+}
+
+.db-check.erro {
+  border-left-color: #dc2626;
+  background: #fff7f7;
+}
+
+.db-check strong {
+  color: #0f172a;
+}
+
+.db-check p {
+  margin: 6px 0 0;
+  color: #475569;
+}
+
+.db-check small {
+  display: block;
+  color: #991b1b;
+  margin-top: 6px;
+}
+
+.db-check > span {
+  color: var(--sig-blue);
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .json-box {
@@ -591,7 +745,8 @@ pre {
   }
 
   .filters-card.compact-grid,
-  .detail-grid {
+  .detail-grid,
+  .validation-summary {
     grid-template-columns: 1fr;
   }
 

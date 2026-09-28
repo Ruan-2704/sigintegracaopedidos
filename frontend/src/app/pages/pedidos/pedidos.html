@@ -169,6 +169,11 @@
         <div><label>CNPJ distribuidor</label><strong>{{ selecionado.cnpjDistribuidor || selecionado.CnpjDistribuidor || '-' }}</strong></div>
         <div><label>Campanha</label><strong>{{ selecionado.idCampanha || selecionado.IdCampanha || '-' }}</strong></div>
         <div><label>OL</label><strong>{{ selecionado.idOl || selecionado.IdOL || '-' }}</strong></div>
+        <div class="detail-card-stack">
+          <label>Rede do cliente</label>
+          <strong>{{ redeCliente(selecionado) }}</strong>
+          <small *ngIf="lojaCliente(selecionado) !== '-'">{{ lojaCliente(selecionado) }}</small>
+        </div>
         <div><label>Itens</label><strong>{{ selecionado.itens || '-' }}</strong></div>
         <div><label>Rastreio</label><strong>{{ selecionado.rastreio || '-' }}</strong></div>
       </div>
@@ -217,15 +222,71 @@
       <div class="validation-header">
         <div>
           <h3>Validacao automatica</h3>
-          <p>Leitura inicial do motivo, mensagem e payload recebido.</p>
+          <p>Leitura do motivo, retorno da API, payload recebido e cruzamentos com a base da rede.</p>
         </div>
-        <button type="button" class="btn-primary" (click)="validarErro()">Validar novamente</button>
+        <button type="button" class="btn-primary" (click)="validarErro()" [disabled]="validandoSelecionado">
+          {{ validandoSelecionado ? 'Validando...' : 'Validar novamente' }}
+        </button>
       </div>
+
+      <div class="validation-summary" *ngIf="resultadoValidadorSelecionado">
+        <div [class.ok]="resultadoValidadorSelecionado.resumo?.valido" [class.erro]="!resultadoValidadorSelecionado.resumo?.valido">
+          <label>Status da validacao</label>
+          <strong>{{ resultadoValidadorSelecionado.resumo?.valido ? 'Sem erro bloqueante encontrado' : 'Corrigir antes de reenviar' }}</strong>
+        </div>
+        <div>
+          <label>Rede analisada</label>
+          <strong>{{ resultadoValidadorSelecionado.rede || '-' }}</strong>
+        </div>
+        <div>
+          <label>Erros</label>
+          <strong>{{ resultadoValidadorSelecionado.resumo?.erros || 0 }}</strong>
+        </div>
+        <div>
+          <label>Avisos</label>
+          <strong>{{ resultadoValidadorSelecionado.resumo?.avisos || 0 }}</strong>
+        </div>
+        <div>
+          <label>Banco</label>
+          <strong>{{ resultadoValidadorSelecionado.resumo?.checksOk || 0 }}/{{ resultadoValidadorSelecionado.resumo?.checksTotal || 0 }}</strong>
+        </div>
+      </div>
+
+      <div class="state-card error compact" *ngIf="erroValidacaoSelecionado">{{ erroValidacaoSelecionado }}</div>
 
       <div class="validation-list">
         <article class="validation-item" *ngFor="let validacao of validacoesSelecionado" [ngClass]="validacao.nivel">
           <strong>{{ validacao.titulo }}</strong>
+          <div class="validation-meta" *ngIf="validacao.campo || validacao.codigo || validacao.valorAtual || validacao.valorSugerido || validacao.origem || validacao.tabela || validacao.coluna">
+            <span *ngIf="validacao.campo">Informacao: <b>{{ validacao.campo }}</b></span>
+            <span *ngIf="validacao.tabela">Tabela: <b>{{ validacao.tabela }}</b></span>
+            <span *ngIf="validacao.coluna">Coluna: <b>{{ validacao.coluna }}</b></span>
+            <span *ngIf="validacao.valorAtual">Valor recebido: <b>{{ validacao.valorAtual }}</b></span>
+            <span *ngIf="validacao.valorSugerido">Valor esperado/sugerido: <b>{{ validacao.valorSugerido }}</b></span>
+            <span *ngIf="validacao.codigo">Codigo: <b>{{ validacao.codigo }}</b></span>
+            <span *ngIf="validacao.origem">Origem: <b>{{ validacao.origem }}</b></span>
+          </div>
+          <small class="field-reference" *ngIf="validacao.referenciaBanco">
+            Referencia: {{ validacao.referenciaBanco }}
+            <ng-container *ngIf="validacao.campoTecnico"> | payload: {{ validacao.campoTecnico }}</ng-container>
+          </small>
           <p>{{ validacao.detalhe }}</p>
+          <details *ngIf="validacao.amostra">
+            <summary>Amostra</summary>
+            <pre>{{ validacao.amostra | json }}</pre>
+          </details>
+        </article>
+      </div>
+
+      <div class="validation-db" *ngIf="resultadoValidadorSelecionado?.checks?.length">
+        <h4>Consultas feitas no banco</h4>
+        <article class="db-check" *ngFor="let check of resultadoValidadorSelecionado.checks" [class.ok]="check.ok" [class.erro]="!check.ok">
+          <div>
+            <strong>{{ check.nome }}</strong>
+            <p>{{ check.message }}</p>
+            <small *ngIf="check.error">Erro tecnico: {{ check.error }}</small>
+          </div>
+          <span>{{ check.ok ? 'OK' : 'Falhou' }}</span>
         </article>
       </div>
     </section>
