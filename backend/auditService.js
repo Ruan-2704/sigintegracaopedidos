@@ -68,13 +68,13 @@ async function listarAcoesPainel({ limit = 50, acao, status } = {}) {
   const params = [];
 
   if (acao) {
-    where.push('acao = ?');
-    params.push(acao);
+    const acoes = String(acao).split(',').map(item=>item.trim()).filter(Boolean).slice(0,30);
+    if (acoes.length) { where.push('acao IN ('+acoes.map(()=>'?').join(',')+')'); params.push(...acoes); }
   }
 
   if (status) {
-    where.push('status = ?');
-    params.push(status);
+    const statuses = String(status).split(',').map(item=>item.trim()).filter(Boolean).slice(0,10);
+    if (statuses.length) { where.push('status IN ('+statuses.map(()=>'?').join(',')+')'); params.push(...statuses); }
   }
 
   params.push(Math.min(Math.max(Number(limit) || 50, 1), 200));

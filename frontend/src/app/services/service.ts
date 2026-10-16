@@ -227,6 +227,10 @@ export class IntegracaoService {
     return this.getRaw<ApiResponse<string[]>>('/pedidos/log-erros', params as any);
   }
 
+  getHistoricoPedidos(params: any): Observable<any> {
+    return this.getRaw<any>('/pedidos/log-historico', params);
+  }
+
   getEventosServicos(params?: ListParams): Observable<ApiResponse<any[]>> {
     return this.getRaw<ApiResponse<any[]>>('/servicos/logs/eventos', params);
   }

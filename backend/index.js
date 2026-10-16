@@ -49,6 +49,7 @@ const {
 } = require('./remoteExecution');
 
 const { iniciarMonitoramento } = require('./serviceMonitor');
+const { controlar: controlarPedidosSystemd } = require('./pedidosSystemd');
 const { enviarEmailAlerta } = require('./mailer');
 const { enviarAlertaOperacional, listarAlertas, garantirTabelaAlertas } = require('./alertService');
 const { garantirTabelaAcoesPainel, registrarAcaoPainel, listarAcoesPainel } = require('./auditService');
@@ -81,7 +82,7 @@ const TOKEN_TTL_SECONDS = Number(process.env.TOKEN_TTL_SECONDS || 60 * 60 * 12);
 const SIG_FOLDER = process.env.SIGCOTEFACIL_FOLDER || '/home/sigpedidos/sigcotefacil';
 const RUNTIME_LOG_DIR = process.env.RUNTIME_LOG_DIR || path.join(__dirname, 'runtime-logs');
 const ALLOW_CRON_WRITE = String(process.env.ALLOW_CRON_WRITE || 'false').toLowerCase() === 'true';
-const DEFAULT_PEDIDOS_JAR = 'envia-cotacao-0.0.5.jar';
+const DEFAULT_PEDIDOS_JAR = 'envia-cotacao-current.jar';
 const DEFAULT_PEDIDOS_LOG = 'logs/integracao-pedidos.log';
 const dashboardCache = {
   bucket: criarCache(60000),
@@ -193,19 +194,19 @@ function calcularNovasLinhas(linhasAnteriores = [], linhasAtuais = []) {
 const SERVICOS = {
   geracao: {
     chave: 'geracao',
-    nome: 'Geracao de arquivos',
+    nome: 'Geração de arquivos',
     script: process.env.SCRIPT_GERACAO || 'executa_script.sh',
     porta: Number(process.env.GERACAO_PORT || 8080),
   },
   exclusao: {
     chave: 'exclusao',
-    nome: 'Exclusao de arquivos',
+    nome: 'Exclusão de arquivos',
     script: process.env.SCRIPT_EXCLUSAO || 'executa_exclusao_script.sh',
     porta: Number(process.env.EXCLUSAO_PORT || 8081),
   },
   pedidos: {
     chave: 'pedidos',
-    nome: 'API insercao de pedidos',
+    nome: 'API inserção de pedidos',
     jar: process.env.JAR_PEDIDOS || DEFAULT_PEDIDOS_JAR,
     errorLogFile: process.env.LOG_PEDIDOS_ERROS_FILE || DEFAULT_PEDIDOS_LOG,
     porta: Number(process.env.PEDIDOS_PORT || 8080),
@@ -244,13 +245,17 @@ function registrarExecucaoPainel(chave, contexto, result) {
 
 function contextoLogServico(req, chave) {
   const executionId = req?.query?.executionId || null;
-  const atual = execucoesPainel[chave] || null;
+  const atual = chave === 'pedidos'
+    ? { ...(execucoesPainel[chave] || {}), logPath: 'journal:sigcotacao.service', logSource: 'systemd-journal' }
+    : execucoesPainel[chave] || null;
 
   if (!executionId) return atual;
   if (atual?.executionId === executionId) return atual;
 
   return {
     executionId,
+    logPath: atual?.logPath || null,
+    logSource: atual?.logSource || null,
     marker: null,
   };
 }
@@ -303,7 +308,7 @@ async function safePidsServico(chave) {
           `consulta de porta ${chave}`
         ),
         timeoutPromise(
-          listarPidsPorNome(servico.jar, alvoServico(chave)),
+          listarPidsPorNome('java.*-jar .*envia-cotacao-[^ /]+[.]jar', alvoServico(chave)),
           SSH_STATUS_TIMEOUT_MS,
           `consulta de processo ${chave}`
         ),
@@ -382,7 +387,7 @@ async function atualizarStatusServicos({ detectarQueda = true } = {}) {
   servidor: servidorServico('geracao'),
   tipo: 'job',
   online: geracaoPids.length > 0,
-  statusOperacional: geracaoPids.length > 0 ? 'executando' : 'aguardando execuÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o',
+  statusOperacional: geracaoPids.length > 0 ? 'executando' : 'aguardando execução',
   pids: geracaoPids,
   target: 'files',
 },
@@ -393,7 +398,7 @@ async function atualizarStatusServicos({ detectarQueda = true } = {}) {
   servidor: servidorServico('exclusao'),
   tipo: 'job',
   online: exclusaoPids.length > 0,
-  statusOperacional: exclusaoPids.length > 0 ? 'executando' : 'aguardando execuÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o',
+  statusOperacional: exclusaoPids.length > 0 ? 'executando' : 'aguardando execução',
   pids: exclusaoPids,
   target: 'files',
 },
@@ -591,7 +596,7 @@ function validarToken(token) {
 }
 
 function authMiddleware(req, res, next) {
-  const publicPaths = ['/', '/health', '/auth/login'];
+  const publicPaths = ['/', '/health', '/auth/login', '/monitoramento/pedidos'];
 
   if (publicPaths.includes(req.path)) {
     return next();
@@ -630,8 +635,13 @@ app.post('/auth/login', (req, res) => {
   const tokenInformado = String(req.body?.token || req.body?.password || '').trim();
 
   if (!tokenInformado || tokenInformado !== PANEL_TOKEN) {
+    registrarAcaoPainelSeguro({req,usuario:'nao_identificado',acao:'LOGIN_RECUSADO',alvo:'painel',status:'ERRO',
+      mensagem:'Tentativa de acesso ao painel recusada.',detalhe:{motivo:'credencial_invalida'}});
     return erroResponse(res, 401, 'Token invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido.');
   }
+
+  registrarAcaoPainelSeguro({req,usuario:'admin',acao:'LOGIN_ACEITO',alvo:'painel',status:'SUCESSO',
+    mensagem:'Acesso ao painel autorizado.',detalhe:{autenticacao:'token_compartilhado'}});
 
   const now = Math.floor(Date.now() / 1000);
   const accessToken = criarToken({
@@ -1029,6 +1039,13 @@ app.get('/health', async (req, res) => {
    OPERACIONAL / SERVIÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¡OS
 ========================= */
 
+// Estado minimo publico, como /health; nao expoe PIDs, hosts ou comandos.
+app.get('/monitoramento/pedidos', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const data = await require('./pedidosStatusMonitor').consultar();
+  return res.json({ success: true, data });
+});
+
 app.get('/servicos/status', authMiddleware, async (req, res) => {
   try {
     const payload = await consultarStatusServicos({
@@ -1213,7 +1230,7 @@ app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
 app.post('/servicos/pedidos/start', authMiddleware, async (req, res) => {
   try {
     const contextoExecucao = criarContextoExecucaoPainel(req, 'pedidos');
-    const result = await executarJar(SERVICOS.pedidos.jar, 'pedidos', contextoExecucao);
+    const result = await controlarPedidosSystemd('start', contextoExecucao);
     registrarExecucaoPainel('pedidos', contextoExecucao, result);
     invalidarCacheStatusServicos();
     registrarAcaoPainelSeguro({
@@ -1252,7 +1269,7 @@ app.post('/servicos/pedidos/start', authMiddleware, async (req, res) => {
 app.post('/servicos/pedidos/iniciar', authMiddleware, async (req, res) => {
   try {
     const contextoExecucao = criarContextoExecucaoPainel(req, 'pedidos');
-    const result = await executarJar(SERVICOS.pedidos.jar, 'pedidos', contextoExecucao);
+    const result = await controlarPedidosSystemd('start', contextoExecucao);
     registrarExecucaoPainel('pedidos', contextoExecucao, result);
     invalidarCacheStatusServicos();
     registrarAcaoPainelSeguro({
@@ -1303,7 +1320,13 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
 
     ultimoEventoManual[chave] = Date.now();
 
-    const pidsEncerrados = await matarPidsPorPorta(servico.porta, target);
+    let pidsEncerrados;
+    if (chave === 'pedidos') {
+      await controlarPedidosSystemd('stop');
+      pidsEncerrados = pidsAntes;
+    } else {
+      pidsEncerrados = await matarPidsPorPorta(servico.porta, target);
+    }
 
     invalidarCacheStatusServicos();
 
@@ -1635,6 +1658,15 @@ app.get('/servicos/logs/eventos', authMiddleware, async (req, res) => {
   }
 });
 
+app.get('/pedidos/log-historico', authMiddleware, async (req,res) => {
+  try {
+    const payload = await require('./pedidoLogHistory').consultar(req.query);
+    return res.json(Object.assign({success:true},payload));
+  } catch(error) {
+    return erroResponse(res,500,'Nao foi possivel consultar o historico da API.',error);
+  }
+});
+
 app.get('/pedidos/log-erros', authMiddleware, async (req, res) => {
   try {
     const linhas = Math.min(Math.max(Number(req.query.linhas || req.query.limit || 300), 50), 1000);
@@ -1706,113 +1738,22 @@ app.get('/pedidos/log-erros', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/servicos/:servico/logs/stream', async (req, res) => {
+app.get('/servicos/:servico/logs/stream', (req, res) => {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : req.query.token;
-  const payload = validarToken(token);
-
-  if (!payload) {
-    return erroResponse(res, 401, 'Acesso nao autorizado. Faca login novamente.');
-  }
-
+  if (!validarToken(token)) return erroResponse(res,401,'Acesso nao autorizado. Faca login novamente.');
   const chave = req.params.servico;
-
-  if (!SERVICOS[chave]) {
-    return erroResponse(res, 400, 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido.');
-  }
-
-  const scriptName = scriptOuJarServico(chave);
-
-  if (!scriptName) {
-    return erroResponse(res, 400, 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o sem script ou JAR configurado.');
-  }
-
-  const target = targetServicoLog(chave);
-  const linhasStream = Math.min(Math.max(Number(req.query.linhas || 300), 80), 800);
-  const contextoExecucao = contextoLogServico(req, chave);
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders?.();
-
-  let fechado = false;
-  let linhasAnteriores = [];
-
-  const enviar = (data) => {
-    if (!fechado) {
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
-    }
-  };
-
-  const lerEnviar = async (tipo = 'append') => {
-    try {
-      const content = await lerLogRemoto(scriptName, linhasStream, target, contextoExecucao || {});
-      const linhasAtuais = String(content || '').split(/\r?\n/).filter(Boolean);
-
-      if (tipo === 'init') {
-        linhasAnteriores = linhasAtuais;
-        enviar({
-          tipo: 'init',
-          linhas: linhasAtuais,
-          meta: {
-            target,
-            linhas: linhasAtuais.length,
-            atualizadoEm: new Date().toISOString(),
-            executionId: contextoExecucao?.executionId || null,
-            marker: contextoExecucao?.marker || null,
-            logPath: contextoExecucao?.logPath || null,
-            logSource: contextoExecucao?.logSource || null,
-          },
-        });
-        return;
-      }
-
-      const assinaturaAnterior = linhasAnteriores.join('\n');
-      const assinaturaAtual = linhasAtuais.join('\n');
-
-      if (assinaturaAtual && assinaturaAtual !== assinaturaAnterior) {
-        const novasLinhas = calcularNovasLinhas(linhasAnteriores, linhasAtuais);
-        linhasAnteriores = linhasAtuais;
-
-        enviar({
-          tipo: 'append',
-          novasLinhas: novasLinhas.length === linhasAtuais.length ? [] : novasLinhas,
-          linhas: novasLinhas.length === linhasAtuais.length ? linhasAtuais : undefined,
-          meta: {
-            target,
-            linhas: linhasAtuais.length,
-            atualizadoEm: new Date().toISOString(),
-            executionId: contextoExecucao?.executionId || null,
-            marker: contextoExecucao?.marker || null,
-            logPath: contextoExecucao?.logPath || null,
-            logSource: contextoExecucao?.logSource || null,
-          },
-        });
-      }
-    } catch (error) {
-      enviar({
-        tipo: 'erro',
-        mensagem: error.message,
-      });
-    }
-  };
-
-  await lerEnviar('init');
-
-  const interval = setInterval(() => {
-    lerEnviar().catch((error) => {
-      enviar({
-        tipo: 'erro',
-        mensagem: error.message,
-      });
-    });
-  }, Number(process.env.LOG_STREAM_INTERVAL_MS || 1200));
-
-  req.on('close', () => {
-    fechado = true;
-    clearInterval(interval);
-  });
+  if (!SERVICOS[chave]) return erroResponse(res,400,'Servico invalido.');
+  res.setHeader('Content-Type','text/event-stream');
+  res.setHeader('Cache-Control','no-cache, no-transform');
+  res.setHeader('X-Accel-Buffering','no');
+  res.setHeader('Connection','keep-alive');
+  res.flushHeaders();
+  let closed = false;
+  const send = event => { if (!closed) res.write('data: '+JSON.stringify(event)+'\n\n'); };
+  const unsubscribe = require('./liveServiceLogs').subscribe(chave,SERVICOS[chave],send);
+  const heartbeat = setInterval(() => send({tipo:'heartbeat'}),10000);
+  res.on('close',() => { closed=true; clearInterval(heartbeat); unsubscribe(); });
 });
 
 /* =========================

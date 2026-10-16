@@ -3,6 +3,7 @@ param(
   [string]$BackendDir = "/home/sigrede/domains/api.sigcotacao.sigrede.com.br/API",
   [string]$FrontendDir = "/home/sigrede/apps/sigcotacao/web/dist/frontend",
   [string]$Pm2Name = "api.sigcotacao",
+  [string]$IdentityFile = "",
   [switch]$SkipBuild,
   [switch]$SkipConfirm
 )
@@ -28,7 +29,15 @@ function Invoke-Native {
     [string[]]$Arguments = @()
   )
 
-  & $FilePath @Arguments
+  if ($FilePath -in @("ssh", "scp")) {
+    $sshOptions = @("-o", "ControlMaster=no", "-o", "ControlPath=none", "-o", "ControlPersist=no")
+    if ($IdentityFile) {
+      $sshOptions += @("-o", "IdentitiesOnly=yes", "-i", $IdentityFile)
+    }
+    & $FilePath @sshOptions @Arguments
+  } else {
+    & $FilePath @Arguments
+  }
 
   if ($LASTEXITCODE -ne 0) {
     throw "Comando falhou ($LASTEXITCODE): $FilePath $($Arguments -join ' ')"
@@ -184,7 +193,7 @@ echo "Deploy concluido. Backup: `$BACKUP_ROOT/`$STAMP"
 "@
 
 $RemoteScriptPath = Join-Path $Stage "remote-deploy.sh"
-Set-Content -LiteralPath $RemoteScriptPath -Value $RemoteScript -Encoding UTF8
+[IO.File]::WriteAllText($RemoteScriptPath, ($RemoteScript -replace "`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Step "Executando deploy remoto"
 Invoke-Native "scp" @($RemoteScriptPath, "${SshHost}:$RemoteTmp/remote-deploy.sh")

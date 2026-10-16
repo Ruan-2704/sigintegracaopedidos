@@ -10,13 +10,16 @@
 
 <section class="log-groups">
   <button type="button" [class.active]="abaAtiva === 'pedidos-api'" (click)="trocarAba('pedidos-api')">
-    <strong>Erros da API de pedidos</strong>
-    <span>payloads, login e rastreios</span>
+    <strong>Eventos da API</strong>
+    <span>pedidos, campanhas, requisições e autenticação</span>
   </button>
   <button type="button" [class.active]="abaAtiva === 'cron'" (click)="trocarAba('cron')">
     <strong>Logs do crontab</strong>
-    <span>geracao e exclusao</span>
+    <span>geração e exclusão</span>
   </button>
+  <button type="button" [class.active]="abaAtiva === 'operacionais'" (click)="trocarAba('operacionais')"><strong>Eventos dos serviços</strong><span>falhas, execuções e disponibilidade</span></button>
+  <button type="button" [class.active]="abaAtiva === 'auditoria' && somenteAcessosAuditoria" (click)="abrirAcessos()"><strong>Acessos ao painel</strong><span>login aceito e recusado, horário e IP</span></button>
+  <button type="button" [class.active]="abaAtiva === 'auditoria' && !somenteAcessosAuditoria" (click)="abrirAcoes()"><strong>Ações do painel</strong><span>usuário, ação e resultado</span></button>
 </section>
 
 <section *ngIf="abaAtiva === 'operacionais'">
@@ -124,46 +127,55 @@
 
 <section class="api-log-card" *ngIf="abaAtiva === 'pedidos-api'">
   <div class="api-log-head">
-    <div>
-      <span class="eyebrow">API de pedidos</span>
-      <h3>Erros e rastreios da integracao</h3>
-      <p>Consulta do arquivo atual gerado pela API de pedidos. Os arquivos rotacionados ficam no servidor por ate 7 dias.</p>
-    </div>
-    <button type="button" class="btn-primary" (click)="carregarLogErrosPedidos(true)" [disabled]="carregandoPedidosApi">
-      {{ carregandoPedidosApi ? 'Consultando...' : 'Consultar log' }}
-    </button>
-  </div>
-
-  <div class="api-log-filters">
-    <div class="field">
-      <label>Busca</label>
-      <input type="text" placeholder="Mensagem, payload, campanha ou pedido" [(ngModel)]="filtroPedidosApi" (keyup.enter)="carregarLogErrosPedidos(true)" />
-    </div>
-    <div class="field">
-      <label>Rastreio</label>
-      <input type="text" placeholder="X-Rastreio" [(ngModel)]="rastreioPedidosApi" (keyup.enter)="carregarLogErrosPedidos(true)" />
-    </div>
-    <label class="check-field">
-      <input type="checkbox" [(ngModel)]="somenteErrosPedidosApi" />
-      <span>Somente erros</span>
-    </label>
-    <div class="filter-actions">
-      <button type="button" class="btn-secondary" (click)="limparLogErrosPedidos()">Limpar</button>
+    <div><span class="eyebrow">Histórico da API</span><h3>Eventos da integração de pedidos</h3>
+      <p>Arquivo atual e histórico compactado disponível no servidor. Retenção configurada: sete dias.</p></div>
+    <div class="history-actions">
+      <button type="button" class="btn-secondary" (click)="baixarPedidosApi()" [disabled]="!logsPedidosApi.length || carregandoPedidosApi">Baixar página</button>
+      <button type="button" class="btn-primary" (click)="carregarLogErrosPedidos(true)" [disabled]="carregandoPedidosApi">{{ carregandoPedidosApi ? 'Consultando...' : 'Atualizar' }}</button>
     </div>
   </div>
-
-  <div class="api-log-meta">
-    <span>Arquivo: <strong>{{ arquivoLogsPedidosApi?.path || 'logs/integracao-pedidos.log' }}</strong></span>
-    <span *ngIf="metaLogsPedidosApi">Linhas: <strong>{{ metaLogsPedidosApi.linhas || logsPedidosApi.length }}</strong></span>
-    <span *ngIf="metaLogsPedidosApi?.atualizadoEm">Atualizado em {{ metaLogsPedidosApi.atualizadoEm | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+  <form class="history-filters" (ngSubmit)="filtrarPedidosApi()">
+    <label>Início<input type="date" name="inicio" [(ngModel)]="inicioPedidosApi" /></label>
+    <label>Fim<input type="date" name="fim" [(ngModel)]="fimPedidosApi" /></label>
+    <details class="multi-filter"><summary>Níveis: {{ niveisPedidosApi.length || 'todos' }}</summary>
+      <label *ngFor="let nivel of ['INFO','WARN','ERROR','DEBUG','TRACE']"><input type="checkbox" [checked]="niveisPedidosApi.includes(nivel)" (change)="alternarNivel(nivel)" />{{ nivel }}</label>
+    </details>
+    <details class="multi-filter"><summary>Categorias: {{ categoriasPedidosApi.length || 'todas' }}</summary>
+      <label *ngFor="let categoria of categoriasApi"><input type="checkbox" [checked]="categoriasPedidosApi.includes(categoria.valor)" (change)="alternarCategoria(categoria.valor)" />{{ categoria.nome }}</label>
+    </details>
+    <label>Pedido<input name="pedido" [(ngModel)]="pedidoPedidosApi" /></label>
+    <label>Campanha<input name="campanha" [(ngModel)]="campanhaPedidosApi" /></label>
+    <label>Rastreio<input name="rastreio" [(ngModel)]="rastreioPedidosApi" /></label>
+    <label class="history-search">Busca<input name="busca" placeholder="Mensagem ou conteúdo dos detalhes" [(ngModel)]="filtroPedidosApi" /></label>
+    <div class="history-actions"><button type="submit" class="btn-primary" [disabled]="carregandoPedidosApi">Aplicar filtros</button><button type="button" class="btn-secondary" (click)="limparLogErrosPedidos()">Limpar</button></div>
+  </form>
+  <p class="api-log-meta" *ngIf="metaLogsPedidosApi">
+    {{ metaLogsPedidosApi.total }} eventos encontrados em {{ metaLogsPedidosApi.arquivos?.length || 0 }} arquivos.
+    <span>Disponível: {{ metaLogsPedidosApi.primeiroRegistro | date:'dd/MM/yyyy HH:mm' }} a {{ metaLogsPedidosApi.ultimoRegistro | date:'dd/MM/yyyy HH:mm' }}</span>
+  </p>
+  <div class="state-card error" role="alert" *ngIf="metaLogsPedidosApi?.parcial">Consulta parcial: {{ metaLogsPedidosApi.avisos?.join('; ') }}</div>
+  <div class="state-card error" role="alert" *ngIf="erroPedidosApi">{{ erroPedidosApi }}</div>
+  <div class="state-card" *ngIf="carregandoPedidosApi">Consultando os arquivos de log...</div>
+  <div class="state-card" *ngIf="!carregandoPedidosApi && !erroPedidosApi && !logsPedidosApi.length">Nenhum evento encontrado para os filtros informados.</div>
+  <div class="history-events" *ngIf="!carregandoPedidosApi && !erroPedidosApi">
+    <article class="history-event" *ngFor="let evento of logsPedidosApi">
+      <div class="history-event-head">
+        <time>{{ evento.data | date:'dd/MM/yyyy HH:mm:ss' }}</time>
+        <span class="event-category">{{ nomeCategoria(evento.categoria) }}</span>
+        <span class="event-level" [class.error]="evento.nivel === 'ERROR'" [class.warn]="evento.nivel === 'WARN'">{{ evento.nivel }}</span>
+      </div>
+      <p>{{ evento.mensagem }}</p>
+      <div class="history-reference">
+        <span *ngIf="evento.rota">Rota: {{ evento.rota }}</span><span *ngIf="evento.usuario">Usuário informado: {{ evento.usuario }}</span><span *ngIf="evento.duracaoMs">Duração: {{ evento.duracaoMs }} ms</span>
+        <span *ngIf="evento.pedido">Pedido: {{ evento.pedido }}</span><span *ngIf="evento.campanha">Campanha: {{ evento.campanha }}</span><span *ngIf="evento.rastreio">Rastreio: {{ evento.rastreio }}</span>
+      </div>
+      <details><summary>Detalhes ({{ evento.linhas }} linhas)</summary><small>{{ evento.arquivo }}</small><pre>{{ evento.detalhes }}</pre></details>
+    </article>
   </div>
-
-  <div *ngIf="carregandoPedidosApi" class="state-card compact">Carregando log da API...</div>
-  <div *ngIf="!carregandoPedidosApi && erroPedidosApi" class="state-card compact error">{{ erroPedidosApi }}</div>
-  <div *ngIf="!carregandoPedidosApi && !erroPedidosApi && logsPedidosApi.length === 0" class="state-card compact">Nenhum erro da API carregado.</div>
-
-  <div class="api-log-terminal" *ngIf="!carregandoPedidosApi && !erroPedidosApi && logsPedidosApi.length > 0">
-    <div class="api-log-line" *ngFor="let linha of logsPedidosApi" [class.error]="linhaPedidoApiErro(linha)" [class.warn]="linhaPedidoApiAlerta(linha)">{{ linha }}</div>
+  <div class="pagination" *ngIf="metaLogsPedidosApi && !carregandoPedidosApi">
+    <button type="button" class="btn-secondary" (click)="mudarPaginaPedidosApi(-1)" [disabled]="paginaPedidosApi <= 1">Anterior</button>
+    <span>Página {{ paginaPedidosApi }} de {{ metaLogsPedidosApi.totalPages }}</span>
+    <button type="button" class="btn-secondary" (click)="mudarPaginaPedidosApi(1)" [disabled]="paginaPedidosApi >= metaLogsPedidosApi.totalPages">Próxima</button>
   </div>
 </section>
 
@@ -197,7 +209,7 @@
         <span [class.ok]="item.arquivo?.existe && !item.resumo?.erros">{{ statusResumoCron(item) }}</span>
       </div>
 
-      <small>Script: {{ item.script }} - Arquivo: {{ item.arquivo?.path || '-' }} - Origem: {{ item.arquivo?.source || '-' }}</small>
+      <small>Execução: {{ item.execucao || 'Sem identificador registrado' }} - Script: {{ item.script }} - Arquivo: {{ item.arquivo?.path || '-' }} - Origem: {{ item.arquivo?.source || '-' }}</small>
 
       <div class="log-summary">
         <div><b>{{ item.resumo?.arquivos || 0 }}</b><small>arquivos</small></div>
@@ -210,7 +222,7 @@
         <div class="event-row" *ngFor="let evento of eventosLogCron(item)">
           <span [class.error]="evento.status === 'ERRO'" [class.warn]="evento.status === 'ALERTA'">{{ evento.tipo }}</span>
           <p>{{ evento.mensagem }}</p>
-          <small *ngIf="evento.detalhe">{{ evento.detalhe }}</small>
+          <details *ngIf="evento.detalhe || evento.linhaOriginal"><summary>Detalhe da rotina</summary><pre class="cron-log-output">{{ evento.detalhe || evento.linhaOriginal }}</pre></details>
         </div>
       </div>
 
@@ -242,7 +254,8 @@
     <div class="filters-grid audit-filters-grid">
       <div class="field">
         <label>Acao</label>
-        <select [(ngModel)]="filtroAcaoAuditoria">
+        <select multiple size="5" [(ngModel)]="acoesAuditoriaSelecionadas">
+          <option value="LOGIN_ACEITO">Login aceito</option><option value="LOGIN_RECUSADO">Login recusado</option>
           <option value="">Todas</option>
           <option value="INICIAR_SERVICO">Iniciar servico</option>
           <option value="PARAR_SERVICO">Parar servico</option>
@@ -254,7 +267,7 @@
 
       <div class="field">
         <label>Status</label>
-        <select [(ngModel)]="filtroStatusAuditoria">
+        <select multiple size="3" [(ngModel)]="resultadosAuditoriaSelecionados">
           <option value="">Todos</option>
           <option value="SUCESSO">Sucesso</option>
           <option value="ERRO">Erro</option>
@@ -280,7 +293,7 @@
   <section class="audit-list">
     <div class="list-head">
       <div>
-        <span class="eyebrow">Acoes do painel</span>
+        <span class="eyebrow">Ações do painel</span>
         <strong><b>{{ acoesPainel.length }}</b> acoes exibidas</strong>
       </div>
       <span class="loading-pill" *ngIf="carregandoAuditoria && acoesPainel.length">Atualizando dados...</span>

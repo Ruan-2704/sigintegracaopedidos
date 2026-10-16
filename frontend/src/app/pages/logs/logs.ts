@@ -8,9 +8,9 @@ import { IntegracaoService } from '../../services/service';
 })
 export class LogsComponent implements OnInit {
   private readonly cacheKey = 'sig_integracao_logs_cache';
-  private readonly cacheKeyPedidosApi = 'sig_integracao_pedidos_api_erros_cache';
+  private readonly cacheKeyPedidosApi = 'sig_integracao_pedidos_api_eventos_v2';
   logs: any[] = [];
-  logsPedidosApi: string[] = [];
+  logsPedidosApi: any[] = [];
   metaLogsPedidosApi: any = null;
   arquivoLogsPedidosApi: any = null;
   carregando = false;
@@ -20,7 +20,52 @@ export class LogsComponent implements OnInit {
   filtro = '';
   filtroPedidosApi = '';
   rastreioPedidosApi = '';
-  somenteErrosPedidosApi = true;
+  somenteErrosPedidosApi = false;
+  nivelPedidosApi = '';
+  niveisPedidosApi: string[] = [];
+  categoriasPedidosApi: string[] = [];
+  readonly categoriasApi = [
+    {valor:'PEDIDOS',nome:'Pedidos'}, {valor:'CAMPANHAS_ARQUIVOS',nome:'Campanhas e arquivos'},
+    {valor:'AUTENTICACAO_API',nome:'Autenticação da API'}, {valor:'REQUISICOES_API',nome:'Falhas de requisição'},
+    {valor:'INFRAESTRUTURA',nome:'Infraestrutura'}, {valor:'APLICACAO',nome:'Aplicação e inicialização'}
+  ];
+  alternarCategoria(valor: string): void {
+    this.categoriasPedidosApi = this.categoriasPedidosApi.includes(valor)
+      ? this.categoriasPedidosApi.filter(item=>item!==valor) : [...this.categoriasPedidosApi,valor];
+  }
+  alternarNivel(valor: string): void {
+    this.niveisPedidosApi = this.niveisPedidosApi.includes(valor)
+      ? this.niveisPedidosApi.filter(item=>item!==valor) : [...this.niveisPedidosApi,valor];
+  }
+  nomeCategoria(valor: string): string { return this.categoriasApi.find(item=>item.valor===valor)?.nome || valor; }
+  get somenteAcessosAuditoria(): boolean {
+    const acoes = this.filtroAcaoAuditoria.split(',').filter(Boolean);
+    return acoes.length > 0 && acoes.every(item=>item==='LOGIN_ACEITO' || item==='LOGIN_RECUSADO');
+  }
+  abrirAcessos(): void {
+    this.filtroAcaoAuditoria = 'LOGIN_ACEITO,LOGIN_RECUSADO'; this.filtroStatusAuditoria='';
+    this.abaAtiva='auditoria'; this.carregarAuditoria(true);
+  }
+  abrirAcoes(): void { this.filtroAcaoAuditoria=''; this.abaAtiva='auditoria'; this.carregarAuditoria(true); }
+  inicioPedidosApi = '';
+  fimPedidosApi = '';
+  pedidoPedidosApi = '';
+  campanhaPedidosApi = '';
+  paginaPedidosApi = 1;
+  private consultaPedidosApi = 0;
+
+  filtrarPedidosApi(): void { this.paginaPedidosApi = 1; this.carregarLogErrosPedidos(true); }
+  mudarPaginaPedidosApi(delta: number): void {
+    this.paginaPedidosApi = Math.max(1,this.paginaPedidosApi+delta);
+    this.carregarLogErrosPedidos();
+  }
+  baixarPedidosApi(): void {
+    const blob = new Blob([JSON.stringify(this.logsPedidosApi,null,2)],{type:'application/json;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a'); link.href = url;
+    link.download = 'sigcotacao-eventos-pagina-'+this.paginaPedidosApi+'.json'; link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url),1000);
+  }
   servico = '';
   status = '';
   tipo = '';
@@ -156,31 +201,26 @@ export class LogsComponent implements OnInit {
   }
 
   carregarLogErrosPedidos(force = false): void {
-    const temCache = !force && this.restaurarCachePedidosApi();
-
-    if (!force && temCache) return;
-
-    this.carregandoPedidosApi = !this.logsPedidosApi.length;
+    const consulta = ++this.consultaPedidosApi;
+    this.carregandoPedidosApi = true;
     this.erroPedidosApi = '';
-
-    this.service.getLogErrosPedidos({
-      linhas: 300,
-      search: this.filtroPedidosApi,
-      rastreio: this.rastreioPedidosApi,
-      somenteErros: this.somenteErrosPedidosApi,
-      force
+    this.service.getHistoricoPedidos({
+      page:this.paginaPedidosApi,limit:50,search:this.filtroPedidosApi,
+      rastreio:this.rastreioPedidosApi,niveis:this.niveisPedidosApi.join(','),categorias:this.categoriasPedidosApi.join(','),
+      dataInicio:this.inicioPedidosApi,dataFim:this.fimPedidosApi,
+      pedido:this.pedidoPedidosApi,campanha:this.campanhaPedidosApi,force
     }).subscribe({
-      next: (res: any) => {
+      next: (res:any) => {
+        if (consulta !== this.consultaPedidosApi) return;
         this.logsPedidosApi = res.data || [];
         this.metaLogsPedidosApi = res.meta || null;
         this.arquivoLogsPedidosApi = res.arquivo || null;
-        this.salvarCachePedidosApi();
         this.carregandoPedidosApi = false;
         this.cdr.detectChanges();
       },
-      error: (err) => {
-        console.error('Erro ao carregar log da API de pedidos:', err);
-        this.erroPedidosApi = 'Erro ao carregar log da API de pedidos.';
+      error: err => {
+        if (consulta !== this.consultaPedidosApi) return;
+        this.erroPedidosApi = err?.error?.error || err?.error?.message || 'Não foi possível consultar o histórico.';
         this.carregandoPedidosApi = false;
         this.cdr.detectChanges();
       }
@@ -188,10 +228,10 @@ export class LogsComponent implements OnInit {
   }
 
   limparLogErrosPedidos(): void {
-    this.filtroPedidosApi = '';
-    this.rastreioPedidosApi = '';
-    this.somenteErrosPedidosApi = true;
-    this.carregarLogErrosPedidos(true);
+    this.filtroPedidosApi=''; this.rastreioPedidosApi=''; this.nivelPedidosApi='';
+    this.niveisPedidosApi=[]; this.categoriasPedidosApi=[];
+    this.inicioPedidosApi=''; this.fimPedidosApi=''; this.pedidoPedidosApi=''; this.campanhaPedidosApi='';
+    this.filtrarPedidosApi();
   }
 
   paginaAnterior(): void {
@@ -356,6 +396,11 @@ export class LogsComponent implements OnInit {
     this.limiteAuditoria = 50;
     this.carregarAuditoria(true);
   }
+
+  get acoesAuditoriaSelecionadas(): string[] { return this.filtroAcaoAuditoria.split(',').filter(Boolean); }
+  set acoesAuditoriaSelecionadas(value: string[]) { this.filtroAcaoAuditoria = value.filter(Boolean).join(','); }
+  get resultadosAuditoriaSelecionados(): string[] { return this.filtroStatusAuditoria.split(',').filter(Boolean); }
+  set resultadosAuditoriaSelecionados(value: string[]) { this.filtroStatusAuditoria = value.filter(Boolean).join(','); }
 
   filtrosAuditoriaAtivos(): number {
     return [this.filtroAcaoAuditoria, this.filtroStatusAuditoria].filter(Boolean).length;

@@ -18,7 +18,7 @@ interface LogCacheItem {
 export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
   @ViewChild('terminalRef') terminalRef?: ElementRef<HTMLElement>;
   private readonly cacheKeyServicos = 'sig_integracao_servicos_cache';
-  private readonly cacheKeyLogs = 'sig_integracao_servicos_logs_cache';
+  private readonly cacheKeyLogs = 'sig_integracao_servicos_terminal_v2';
   private readonly logCacheTtlMs = 60000;
   servicos: ServicoStatus[] = [];
   servicoLogSelecionado = 'geracao';
@@ -47,7 +47,21 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
   private timer?: number;
   private logsStream?: EventSource;
   private deveRolarTerminal = false;
-  private seguirTerminal = false;
+  seguirTerminal = true;
+  conexaoLog: 'Conectando' | 'Conectado' | 'Reconectando' | 'Desconectado' = 'Desconectado';
+  erroTerminal = '';
+  private reconexaoTimer?: number;
+  private vigiaTerminal?: number;
+  private tentativasReconexao = 0;
+  private ultimoSinal = 0;
+
+  get linhasTerminal(): string[] {
+    const busca = this.filtroLogTexto.trim().toLocaleLowerCase();
+    return busca ? this.logs.filter(linha => linha.toLocaleLowerCase().includes(busca)) : this.logs;
+  }
+  pausarRolagem(): void { this.seguirTerminal = false; }
+  reconectarTerminal(): void { this.tentativasReconexao = 0; this.conectarStreamLogs(); }
+
 
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
 
@@ -105,9 +119,9 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
   textoLimpo(valor: any): string {
     const texto = String(valor || '');
     const lower = texto.toLowerCase();
-    if (lower.includes('gera') && lower.includes('arquivo')) return 'Geracao de arquivos';
-    if (lower.includes('exclus') && lower.includes('arquivo')) return 'Exclusao de arquivos';
-    if (lower.includes('api inser') && lower.includes('pedido')) return 'API insercao de pedidos';
+    if (lower.includes('gera') && lower.includes('arquivo')) return 'Geração de arquivos';
+    if (lower.includes('exclus') && lower.includes('arquivo')) return 'Exclusão de arquivos';
+    if (lower.includes('api inser') && lower.includes('pedido')) return 'API inserção de pedidos';
     return texto;
   }
 
@@ -121,9 +135,9 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
 
 
   nomePadrao(chave: string): string {
-    if (chave === 'geracao') return 'Geracao de arquivos';
-    if (chave === 'exclusao') return 'Exclusao de arquivos';
-    if (chave === 'pedidos') return 'API insercao de pedidos';
+    if (chave === 'geracao') return 'Geração de arquivos';
+    if (chave === 'exclusao') return 'Exclusão de arquivos';
+    if (chave === 'pedidos') return 'API inserção de pedidos';
     return chave;
   }
 
@@ -169,7 +183,7 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
         window.setTimeout(() => this.carregar(false, true), 20000);
       },
       error: (err) => {
-        this.erro = err?.error?.message || 'Erro ao iniciar serviço.';
+        this.erro = this.mensagemErroEditor(err, 'Não foi possível iniciar o serviço.');
         this.carregando = false;
         this.cdr.detectChanges();
       }
@@ -188,7 +202,7 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
       },
       error: (err) => {
         console.error('Erro ao parar serviço:', err);
-        this.erro = err?.error?.message || 'Erro ao parar serviço.';
+        this.erro = this.mensagemErroEditor(err, 'Não foi possível parar o serviço.');
         this.carregando = false;
         this.cdr.detectChanges();
       }
@@ -199,7 +213,9 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.servicoLogSelecionado = chave;
     this.terminalAberto = true;
     this.modoLog = 'aovivo';
-    this.restaurarCacheLocalLogs(false);
+    this.logs = [];
+    this.logMeta = null;
+    this.seguirTerminal = true;
     this.ativarAoVivo(true);
   }
 
@@ -244,11 +260,7 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   aplicarFiltroLog(): void {
-    if (!this.servicoLogSelecionado) return;
-
-    this.terminalAberto = true;
-    this.fecharStreamLogs();
-    this.carregarLogs(true, true);
+    this.cdr.detectChanges();
   }
 
   limparFiltroLog(): void {
@@ -262,17 +274,12 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
 
     this.terminalAberto = true;
     this.modoLog = 'aovivo';
-    if (!ignorarCache) {
-      this.restaurarCacheLocalLogs(false);
-    }
     this.conectarStreamLogs();
   }
 
 
   limparTerminal(salvar = true): void {
     this.logs = [];
-    this.logMeta = null;
-    this.ultimaAtualizacaoLog = null;
     if (salvar) {
       this.salvarCacheLocalLogs();
     }
@@ -532,11 +539,11 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   linhaErro(linha: string): boolean {
-    return /(exception|erro|error|falha|failed|timeout|timed out|refused|unauthorized|nullpointer|sqlexception)/i.test(linha || '');
+    return /(?:^|\s)ERROR\s/.test(linha || '');
   }
 
   linhaAlerta(linha: string): boolean {
-    return !this.linhaErro(linha) && /(warn|warning|alerta|atenção|atencao)/i.test(linha || '');
+    return /\bWARN(?:ING)?\s/.test(linha || '');
   }
 
   trackServico(_: number, item: ServicoStatus): string {
@@ -549,56 +556,58 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   private conectarStreamLogs(): void {
     if (!this.servicoLogSelecionado) return;
-
     this.fecharStreamLogs();
+    this.conexaoLog = this.tentativasReconexao ? 'Reconectando' : 'Conectando';
     this.carregandoLogs = !this.logs.length;
-
+    this.ultimoSinal = Date.now();
     try {
       const stream = this.service.streamLogsServico(this.servicoLogSelecionado, this.executionIdAtual());
       this.logsStream = stream;
-
-      stream.onmessage = (event) => {
-        const payload = JSON.parse(event.data || '{}');
-        let alterouLogs = false;
-
-        if (Array.isArray(payload.linhas)) {
-          this.logs = payload.linhas.filter(Boolean).slice(-500);
-          alterouLogs = true;
-        } else if (Array.isArray(payload.novasLinhas) && payload.novasLinhas.length) {
-          this.logs = [...this.logs, ...payload.novasLinhas.filter(Boolean)].slice(-500);
-          alterouLogs = true;
-        }
-
-        if (payload.meta) {
-          this.logMeta = payload.meta;
-          if (payload.meta.executionId) {
-            this.executionIds[this.servicoLogSelecionado] = payload.meta.executionId;
-          }
-        }
-
+      stream.onmessage = event => {
+        if (this.logsStream !== stream) return;
+        let payload: any;
+        try { payload = JSON.parse(event.data || '{}'); }
+        catch { this.agendarReconexao('Resposta do terminal inválida.'); return; }
+        this.ultimoSinal = Date.now();
+        if (payload.tipo === 'erro') { this.agendarReconexao(payload.mensagem); return; }
+        if (payload.tipo === 'heartbeat') return;
+        this.conexaoLog = 'Conectado';
+        this.tentativasReconexao = 0;
+        this.erroTerminal = '';
+        if (Array.isArray(payload.linhas)) this.logs = payload.linhas.filter(Boolean).slice(-1000);
+        if (Array.isArray(payload.novasLinhas)) this.logs = [...this.logs,...payload.novasLinhas.filter(Boolean)].slice(-1000);
+        if (payload.meta) this.logMeta = payload.meta;
         this.ultimaAtualizacaoLog = new Date();
-        if (!this.filtrosLogAtivos()) {
-          this.salvarCacheLocalLogs();
-        }
         this.carregandoLogs = false;
-        if (alterouLogs && this.seguirTerminal) this.agendarRolagemTerminal();
+        if (this.seguirTerminal) this.agendarRolagemTerminal();
         this.cdr.detectChanges();
       };
+      stream.onerror = () => { if (this.logsStream === stream) this.agendarReconexao('Conexão com o terminal interrompida.'); };
+      this.vigiaTerminal = window.setInterval(() => {
+        if (Date.now()-this.ultimoSinal > 30000) this.agendarReconexao('O terminal deixou de responder.');
+      },5000);
+    } catch (err: any) { this.agendarReconexao(err?.message || 'Não foi possível conectar ao terminal.'); }
+    this.cdr.detectChanges();
+  }
 
-      stream.onerror = () => {
-        this.fecharStreamLogs();
-        this.carregarLogs(false);
-      };
-    } catch {
-      this.carregarLogs(false);
-    }
+  private agendarReconexao(mensagem: string): void {
+    this.fecharStreamLogs();
+    this.conexaoLog = 'Reconectando';
+    this.erroTerminal = mensagem;
+    this.carregandoLogs = false;
+    const espera = Math.min(1000 * Math.pow(2,this.tentativasReconexao++),15000);
+    this.reconexaoTimer = window.setTimeout(() => this.conectarStreamLogs(),espera);
+    this.cdr.detectChanges();
   }
 
   private fecharStreamLogs(): void {
-    if (this.logsStream) {
-      this.logsStream.close();
-      this.logsStream = undefined;
-    }
+    if (this.reconexaoTimer) window.clearTimeout(this.reconexaoTimer);
+    if (this.vigiaTerminal) window.clearInterval(this.vigiaTerminal);
+    this.reconexaoTimer = undefined;
+    this.vigiaTerminal = undefined;
+    if (this.logsStream) this.logsStream.close();
+    this.logsStream = undefined;
+    this.conexaoLog = 'Desconectado';
   }
 
   private agendarRolagemTerminal(): void {
@@ -610,8 +619,8 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!el) return;
 
     window.requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
-      el.scrollIntoView({ block: 'end', behavior: 'smooth' });
+      if (this.seguirTerminal) el.scrollTop = el.scrollHeight;
+
     });
   }
 

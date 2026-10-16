@@ -3,7 +3,7 @@ const fs = require('fs');
 const { spawn, exec } = require('child_process');
 const { runSshCommand } = require('./sshClient');
 
-const DEFAULT_PEDIDOS_JAR = 'envia-cotacao-0.0.5.jar';
+const DEFAULT_PEDIDOS_JAR = 'envia-cotacao-current.jar';
 const DEFAULT_PEDIDOS_LOG = 'logs/integracao-pedidos.log';
 
 function isSshMode() {
@@ -724,7 +724,32 @@ async function matarPidsPorPorta(port, target = 'files') {
   return pids;
 }
 
+async function lerJournalPedidos(linhas, options = {}) {
+  if (isWindowsLocalMode()) return '';
+  const n = Math.min(Math.max(Math.floor(Number(linhas)) || 300, 50), 8000);
+  const dias = Math.min(Math.max(Number(options.dias) || 0, 0), 30);
+  let filtro;
+  if (dias > 0) {
+    const desde = Math.floor((Date.now() - dias * 86400000) / 1000);
+    filtro = '-u sigcotacao.service --since=@' + desde;
+  } else {
+    const invocation = String(await executarComando(
+      'systemctl show sigcotacao.service --property=InvocationID --value', 'pedidos'
+    )).trim();
+    if (!/^[a-f0-9]{32}$/i.test(invocation)) return 'Servico sem execucao atual. Use o filtro de periodo para consultar o historico.';
+    filtro = '_SYSTEMD_INVOCATION_ID=' + invocation;
+  }
+  // Nao usar arquivos runtime antigos como fallback: pertencem ao nohup.
+  const content = await executarComando(
+    'journalctl --quiet --no-pager -o short-iso ' + filtro + ' -n ' +
+      (options.search ? 8000 : n),
+    'pedidos'
+  );
+  return filtrarLinhasPorConsulta(String(content || '').split('\n'), options).slice(-n).join('\n');
+}
+
 async function lerLogRemoto(scriptName, linhas = 300, target = 'files', options = {}) {
+  if (target === 'pedidos') return lerJournalPedidos(linhas, options);
   const workdir = workdirFor(target);
   const n = Math.max(Number(linhas) || 300, 50);
   const consultaHistorica = Number(options.dias || 0) > 0 || String(options.search || '').trim();
@@ -1052,6 +1077,7 @@ async function lerLogsCrontab(servicos = {}, linhas = 200, options = {}) {
       arquivo,
       linhas: linhasLog,
       content: linhasLog.join('\n'),
+      execucao: (String(linhasLog.join('\n')).match(/executionId=([^\s]+)/) || [])[1] || null,
       resumo: analisarLogCron(chave, linhasLog),
     });
   }
@@ -1060,6 +1086,7 @@ async function lerLogsCrontab(servicos = {}, linhas = 200, options = {}) {
 }
 
 module.exports = {
+  listarCandidatosLog,
   executarScript,
   executarJar,
   executarComando,

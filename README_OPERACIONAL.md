@@ -136,3 +136,105 @@ Opções úteis:
 .\scripts\deploy.ps1 -SkipBuild
 .\scripts\deploy.ps1 -SkipConfirm
 ```
+
+
+### Status da API na Central de Bases
+
+A Central de Bases consulta GET /monitoramento/pedidos neste backend. A rota publica,
+assim como /health, retorna somente success e data com status (ONLINE, OFFLINE ou
+INDISPONIVEL) e verificadoEm em ISO UTC. Nao retorna hosts, PIDs ou comandos.
+ONLINE exige que o mesmo PID ocupe PEDIDOS_PORT (padrao 8080) e corresponda ao
+processo Java executando envia-cotacao-*.jar. Falhas de consulta retornam INDISPONIVEL.
+A verificacao reaproveita o alvo SSH pedidos, tem prazo de 6 segundos e cache de
+10 segundos com compartilhamento de consultas simultaneas. Nao inicia nem para processos.
+
+No APISig, CENTRAL_BASES_SIG_COTACAO_STATUS_URL pode substituir o endereco padrao
+https://api.sigcotacao.sigrede.com.br/monitoramento/pedidos. A Central rejeita
+respostas com verificacao anterior a 90 segundos e conserva os alertas de pedidos.
+Publicar primeiro este backend e depois o APISig e o frontend SIGREDE. Antes da
+publicacao desta rota, o card mostrara Status indisponivel. Nao ha migracao de banco.
+
+
+### Botoes iniciar/parar da API de pedidos com systemd
+
+As duas rotas de inicio (/servicos/pedidos/start e /servicos/pedidos/iniciar)
+e /servicos/pedidos/stop controlam exclusivamente sigcotacao.service no alvo
+SSH pedidos. Nao executam mais nohup/java diretamente nem matam o PID pela porta.
+O JAR e o diretorio usados sao os configurados no servico e seus drop-ins.
+A consulta de status aceita envia-cotacao-*.jar, sem fixar uma versao antiga.
+O start confirma estado ativo/MainPID; a disponibilidade HTTP segue sendo
+verificada por processo/porta. O stop confirma estado inativo e MainPID zero.
+Erros de sudo nao causam fallback para execucao manual.
+
+No servidor da API, um administrador deve liberar apenas start/stop dessa unidade
+para o usuario definido em SSH_PEDIDOS_USER no backend. Se for sigpedidos, usar
+visudo -f /etc/sudoers.d/sigcotacao-painel e a regra:
+
+    sigpedidos ALL=(root) NOPASSWD: /usr/bin/systemctl start sigcotacao.service, /usr/bin/systemctl stop sigcotacao.service
+
+Validar com visudo -cf /etc/sudoers.d/sigcotacao-painel. Nao liberar sudo generico.
+A parada pelo painel permanece intencional ate novo start; Restart=always continua
+valendo para quedas do processo enquanto o servico estiver iniciado.
+
+
+Para migrar a unidade existente preservando o JAR e os drop-ins, copiar
+scripts/migrar-servico-sigcotacao.sh para o servidor da API e executar com sudo bash.
+O script salva backup em /var/backups/sigcotacao, desabilita o nome anterior,
+habilita sigcotacao.service e configura sudo start/stop para sigpedidos.
+Mantem o estado anterior (API parada continua parada). Reiniciar o backend local
+apos atualizar o codigo. A migracao nao atualiza a versao do JAR.
+
+A referencia local JAR_PEDIDOS e o padrao do backend usam envia-cotacao-current.jar.
+O link no servidor define a versao (0.0.9 na atualizacao solicitada). O painel
+continua iniciando via sigcotacao.service; seu ExecStart deve usar esse mesmo link.
+Reiniciar o backend local apos alterar o .env.
+
+O terminal da API de pedidos (consulta e stream) le o journal de sigcotacao.service.
+Por padrao filtra InvocationID da execucao atual para nao mostrar falhas antigas.
+O filtro de dias consulta o historico da unidade. Erros de leitura sao apresentados
+sem fallback para runtime-*.log. O usuario SSH precisa de leitura dos logs de sua
+propria unidade; essa leitura foi verificada em sigpedidos sem sudo.
+
+
+### Terminal ao vivo e historico de pedidos
+
+Servicos usa SSE com uma conexao SSH continua compartilhada por servico. A API
+acompanha journalctl -f da unidade sigcotacao.service e filtra a execucao atual;
+geracao/exclusao acompanham tail -F da saida real da rotina. O backend libera a
+conexao quando o ultimo usuario sai. Ha heartbeat, reconexao com espera progressiva,
+limite de 1.000 linhas em tela e controles de rolagem que nao interrompem a coleta.
+A origem, PID, versao e inicio da API sao informados pelo servidor.
+
+GET /pedidos/log-historico (autenticado) consulta o arquivo atual e rotacoes
+.log/.log.gz da API, sem utilizar logs de nohup. Os filtros aceitos sao dataInicio,
+dataFim, nivel, pedido, campanha, rastreio e search. Page/limit paginam eventos
+(50 por pagina por padrao, maximo 200), e uma stack trace pertence ao evento
+que a iniciou. Mensagem resumida e detalhes completos sao retornados separados.
+O scanner percorre os arquivos disponiveis sem tail limitado e informa falhas
+parciais. O historico usa Python 3 no alvo SSH, ja verificado nesse servidor.
+A retencao continua sendo definida no JAR: a tela nao apaga logs nem muda o prazo.
+
+Logs e Auditoria permite expandir detalhes e baixar a pagina consultada em JSON.
+O endpoint anterior /pedidos/log-erros permanece para compatibilidade; a nova
+tela usa exclusivamente /pedidos/log-historico para os eventos persistidos.
+
+Validacao sem build:
+- node backend/tests/liveServiceLogs.test.js
+- python3 backend/tests/pedidoLogHistory.test.py
+- node frontend/node_modules/@angular/compiler-cli/bundles/src/bin/ngc.js --noEmit -p frontend/tsconfig.app.json
+
+Reiniciar o backend local e atualizar o frontend para carregar as alteracoes.
+Para publicar, seguir scripts/deploy.ps1; nenhuma migracao SQL e necessaria.
+
+
+### Categorias e auditoria de acessos
+
+O login do painel registra LOGIN_ACEITO e LOGIN_RECUSADO em painel_acoes, com
+horario/IP e sem persistir a credencial. A identidade continua compartilhada:
+admin em sucesso; nao_identificado em tentativa recusada. Nao ha novo login individual.
+O historico da API aceita niveis e categorias separados por virgula. Multiplos
+valores sao combinados por OU dentro do filtro e por E entre filtros diferentes.
+Campanhas/arquivos nao sao classificados automaticamente como falha de pedido.
+A auditoria aceita varias acoes/status com parametros SQL. Os filtros de supressao
+de infraestrutura do monitor foram preservados ate decisao do usuario.
+Teste adicional: node backend/tests/auditLogin.test.js

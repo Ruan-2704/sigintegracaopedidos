@@ -49,3 +49,6 @@
 @media (max-width: 1180px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } .dashboard-grid { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .page-title { align-items: flex-start; flex-direction: column; } .dashboard-actions { width: 100%; } .dashboard-actions input, .dashboard-actions button { flex: 1; min-width: 140px; } .kpi-grid { grid-template-columns: 1fr; } .alert-item { grid-template-columns: 1fr; align-items: flex-start; } }
 @keyframes pulseLine { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+.kpi-icon { background: #eef2ff; color: var(--sig-blue); border: 1px solid #dce3f4; }
+.kpi-icon svg { display: block; width: 25px; height: 25px; }
+.kpi-card.warning .kpi-icon { background: #fff5e7; color: #a85d0b; border-color: #f0d6b0; }

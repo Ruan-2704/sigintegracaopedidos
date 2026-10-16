@@ -34,7 +34,7 @@
     </div>
 
     <div class="live-chip" *ngIf="terminalAberto && item.chave === servicoLogSelecionado">
-      Log ao vivo aberto
+      {{ conexaoLog }}
     </div>
 
     <div class="service-meta">
@@ -147,30 +147,28 @@
         [(ngModel)]="filtroLogTexto"
         (keyup.enter)="aplicarFiltroLog()"
       />
-      <input
-        type="number"
-        min="1"
-        max="30"
-        placeholder="Dias"
-        [(ngModel)]="filtroLogDias"
-        (keyup.enter)="aplicarFiltroLog()"
-      />
+
       <button type="button" class="btn-secondary" (click)="aplicarFiltroLog()" [disabled]="carregandoLogs">Aplicar filtro</button>
       <button type="button" class="btn-secondary" (click)="limparFiltroLog()" [disabled]="carregandoLogs || !filtrosLogAtivos()">Limpar</button>
     </div>
     <div class="terminal-actions">
-      <button type="button" class="btn-secondary" (click)="carregarDiagnosticoLogs(true)">Diagnosticar</button>
+      <span class="connection-state" role="status" [class.connected]="conexaoLog === 'Conectado'">{{ conexaoLog }}</span>
+      <button type="button" class="btn-secondary" (click)="pausarRolagem()" [disabled]="!seguirTerminal">Pausar rolagem</button>
+      <button type="button" class="btn-secondary" (click)="acompanharTerminal()" [disabled]="seguirTerminal">Seguir últimas linhas</button>
+      <button type="button" class="btn-secondary" (click)="limparTerminal(false)">Limpar tela</button>
+      <button type="button" class="btn-secondary" (click)="reconectarTerminal()">Reconectar</button>
+      <button type="button" class="btn-secondary" *ngIf="servicoLogSelecionado !== 'pedidos'" (click)="carregarDiagnosticoLogs(true)">Diagnosticar</button>
     </div>
   </div>
 
   <div class="log-summary" *ngIf="terminalAberto">
     <div>
       <small>Origem</small>
-      <strong>{{ arquivoLogPrincipal()?.source || 'Não identificada' }}</strong>
+      <strong>{{ logMeta?.origem || 'Conectando' }}</strong>
     </div>
     <div>
-      <small>Arquivo lido</small>
-      <strong>{{ arquivoLogPrincipal()?.path || '-' }}</strong>
+      <small>Saída acompanhada</small>
+      <strong>{{ logMeta?.logPath || '-' }}</strong>
     </div>
     <div>
       <small>Linhas em tela</small>
@@ -178,7 +176,13 @@
     </div>
   </div>
 
-  <div class="execution-summary" *ngIf="terminalAberto && logs.length && resumoOperacional() as resumo">
+  <p class="terminal-notice" role="alert" *ngIf="erroTerminal">{{ erroTerminal }} Nova tentativa automática em andamento.</p>
+  <div class="terminal-metadata" *ngIf="terminalAberto && servicoLogSelecionado === 'pedidos'">
+    <span>Versão: <strong>{{ logMeta?.versao || '-' }}</strong></span>
+    <span>PID: <strong>{{ logMeta?.pid || '-' }}</strong></span>
+    <span>Início: <strong>{{ logMeta?.inicio || '-' }}</strong></span>
+  </div>
+  <div class="execution-summary" *ngIf="terminalAberto && servicoLogSelecionado !== 'pedidos' && logs.length && resumoOperacional() as resumo">
     <div class="summary-head">
       <span class="eyebrow">Resumo da execução</span>
     </div>
@@ -190,12 +194,13 @@
     </div>
   </div>
 
-  <div class="terminal" #terminalRef *ngIf="terminalAberto" (click)="acompanharTerminal()">
+  <p class="terminal-retention" *ngIf="terminalAberto">Acompanhamento das últimas 1.000 linhas. O histórico persistido fica em Logs e Auditoria.</p>
+  <div class="terminal" #terminalRef *ngIf="terminalAberto" (wheel)="pausarRolagem()" (touchmove)="pausarRolagem()">
     <div *ngIf="carregandoLogs && !logs.length" class="terminal-state">Carregando logs...</div>
     <div *ngIf="!carregandoLogs && !logs.length" class="terminal-state">Nenhum log carregado ainda.</div>
     <div
       class="terminal-line"
-      *ngFor="let linha of logs; trackBy: trackLinha"
+      *ngFor="let linha of linhasTerminal; trackBy: trackLinha"
       [class.error]="linhaErro(linha)"
       [class.warn]="linhaAlerta(linha)"
     >{{ linha }}</div>

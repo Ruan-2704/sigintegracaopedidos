@@ -12,18 +12,12 @@
 
       <div class="brand-text">
         <strong>SIG Cotação</strong>
-        <small>Central Cotefácil / SmartPed</small>
       </div>
     </div>
 
     <div class="top-actions">
-      <button class="refresh" type="button" (click)="verificarStatus()">Atualizar status</button>
 
-      <span class="status-pill" [class.bad]="status === 'erro' || banco === 'erro' || bucket === 'erro'">
-        <span></span>{{ status === 'erro' ? 'Offline' : 'Online' }}
-      </span>
-
-      <button class="user-pill" type="button">ADMIN</button>
+      <span class="user-pill">Admin</span>
     </div>
   </header>
 

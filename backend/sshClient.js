@@ -36,4 +36,21 @@ function runSshCommand(command, target = 'files') {
   });
 }
 
-module.exports = { runSshCommand };
+function streamSshCommand(command, target, handlers) {
+  const conn = new Client();
+  let closed = false;
+  conn.on('ready', () => {
+    if (closed) return conn.end();
+    conn.exec(command, (err, channel) => {
+      if (err) return handlers.error(err);
+      channel.on('data', data => handlers.data(data));
+      channel.stderr.on('data', data => handlers.stderr && handlers.stderr(data));
+      channel.on('close', code => { conn.end(); if (!closed) handlers.end(code); });
+    });
+  }).on('error', err => { if (!closed) handlers.error(err); })
+    .on('close', () => { if (!closed) { closed = true; handlers.end(); } })
+    .connect(getSshConfig(target));
+  return { close() { closed = true; conn.end(); conn.destroy(); } };
+}
+
+module.exports = { runSshCommand, streamSshCommand };

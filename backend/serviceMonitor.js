@@ -238,7 +238,8 @@ async function checarLogServico(chave, servico) {
     return;
   }
 
-  const assinaturaAtual = gerarAssinaturaErro(log);
+  const execucao = (String(log).match(/executionId=([^\s]+)/) || [])[1] || null;
+  const assinaturaAtual = String(execucao || '') + ':' + gerarAssinaturaErro(log);
   const assinaturaAnterior = ultimoErroLog.get(chave);
 
   if (assinaturaAtual !== assinaturaAnterior) {
@@ -249,7 +250,7 @@ async function checarLogServico(chave, servico) {
       tipo: 'ERRO_LOG',
       status: 'ERRO',
       mensagem: `Erro identificado no log do serviço ${servico.nome}.`,
-      detalhe: extrairTrechoErro(log),
+      detalhe: { rotina: chave, nome: servico.nome, execucao, script: scriptOuJar, trecho: extrairTrechoErro(log) },
       origem: scriptOuJar,
     });
 
@@ -267,9 +268,9 @@ async function checarServicoContinuo(chave, servico) {
   const target = alvoServico(chave);
 
   const pidsPorta = await listarPidsPorPorta(servico.porta, target);
-  const pidsProcesso = servico.jar ? await listarPidsPorNome(servico.jar, target) : [];
+  const pidsProcesso = servico.jar ? await listarPidsPorNome(chave === 'pedidos' ? 'java.*-jar .*envia-cotacao-[^ /]+[.]jar' : servico.jar, target) : [];
 
-  const online = pidsPorta.length > 0 && pidsProcesso.length > 0;
+  const online = pidsPorta.some(pid => pidsProcesso.includes(pid));
   const anterior = estado.get(chave);
 
   if (!online && (!anterior || anterior.online === true)) {
