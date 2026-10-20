@@ -7,9 +7,7 @@
 
 .page-title h2 {
   margin: 0;
-  color: var(--sig-blue);
-  font-size: 32px;
-}
+  color: var(--sig-blue); font-size: 24px; font-weight: 600; }
 
 .page-title p {
   margin: 6px 0 0;
@@ -18,7 +16,7 @@
 
 .eyebrow {
   color: var(--sig-blue);
-  font-weight: 900;
+  font-weight: 600;
   text-transform: uppercase;
   font-size: 12px;
   letter-spacing: .06em;
@@ -26,17 +24,17 @@
 
 .validator-grid {
   display: grid;
-  grid-template-columns: minmax(420px, 1.1fr) minmax(360px, .9fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   align-items: start;
 }
 
 .card {
-  background: #fff;
-  border-radius: 16px;
+  background: var(--sig-card);
+  border-radius: 12px;
   padding: 18px;
   box-shadow: var(--sig-shadow-soft);
-  border: 1px solid #e5e9f5;
+  border: 1px solid var(--sig-border);
 }
 
 .card-header {
@@ -54,7 +52,7 @@
 }
 
 .validator-header__text {
-  min-width: 220px;
+  min-width: 0;
 }
 
 .validator-header__actions {
@@ -78,7 +76,7 @@
 
 .form-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, .6fr) auto;
   gap: 12px;
   margin-bottom: 12px;
   align-items: end;
@@ -88,20 +86,19 @@ label {
   display: grid;
   gap: 7px;
   font-size: 12px;
-  color: #475569;
-  font-weight: 800;
+  color: var(--sig-text-secondary);
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .04em;
 }
 
 input[type="text"],
 select {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--sig-input-border);
   border-radius: 11px;
   padding: 12px 13px;
   outline: none;
-  color: var(--sig-text);
-  background: #fff;
+  color: var(--sig-text); background: var(--sig-input-bg);
   min-height: 44px;
 }
 
@@ -117,16 +114,17 @@ select {
 
 textarea {
   width: 100%;
-  min-height: 520px;
+  min-height: 180px;
+  height: clamp(180px, calc(100dvh - 410px), 480px);
   resize: vertical;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--sig-input-border);
   border-radius: 14px;
   padding: 14px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: #0f172a;
-  background: #f8fafc;
+  color: var(--sig-text);
+  background: var(--sig-soft);
   box-sizing: border-box;
 }
 
@@ -134,17 +132,17 @@ textarea:focus,
 input[type="text"]:focus,
 select:focus {
   border-color: var(--sig-blue);
-  box-shadow: 0 0 0 3px rgba(11, 92, 173, .12);
+  box-shadow: 0 0 0 3px var(--sig-focus);
 }
 
 .detect-box {
   margin: 0 0 12px;
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border: 1px solid var(--sig-info-border);
+  background: var(--sig-info-bg);
+  color: var(--sig-info);
   border-radius: 12px;
   padding: 10px 12px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .actions {
@@ -160,7 +158,7 @@ select:focus {
   border: 0;
   border-radius: 10px;
   cursor: pointer;
-  font-weight: 800;
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -169,22 +167,19 @@ select:focus {
 
 .btn-primary {
   background: var(--sig-blue);
-  color: #fff;
+  color: var(--sig-on-primary);
   padding: 11px 16px;
-  box-shadow: 0 8px 16px rgba(48, 63, 159, .14);
+  box-shadow: var(--sig-shadow-soft);
 }
 
-.btn-secondary {
-  background: #eef0f8;
-  color: var(--sig-blue);
-  padding: 10px 14px;
-}
+.btn-secondary { background: var(--sig-card); color: var(--sig-text-secondary);
+  padding: 10px 14px; border: 1px solid var(--sig-input-border); font-weight: 500; }
 
 .btn-success {
-  background: #16a34a;
-  color: #fff;
+  background: var(--sig-success);
+  color: var(--sig-on-primary);
   padding: 11px 16px;
-  box-shadow: 0 8px 16px rgba(22, 163, 74, .16);
+  box-shadow: var(--sig-shadow-soft);
 }
 
 button:disabled {
@@ -194,8 +189,8 @@ button:disabled {
 
 .error-box {
   margin-top: 14px;
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--sig-danger-bg);
+  color: var(--sig-danger);
   padding: 12px 14px;
   border-radius: 12px;
   font-weight: 700;
@@ -206,25 +201,25 @@ button:disabled {
   grid-template-columns: 1fr auto;
   gap: 14px;
   margin-top: 14px;
-  border: 1px solid #fed7aa;
+  border: 1px solid var(--sig-warning-border);
   border-radius: 14px;
   padding: 14px;
-  background: #fff7ed;
+  background: var(--sig-warning-bg);
 }
 
 .resend-result.ok {
-  border-color: #bbf7d0;
-  background: #ecfdf5;
+  border-color: var(--sig-success-border);
+  background: var(--sig-success-bg);
 }
 
 .resend-result h3 {
   margin: 3px 0 0;
-  color: #0f172a;
+  color: var(--sig-text);
 }
 
 .resend-result p {
   margin: 6px 0 0;
-  color: #475569;
+  color: var(--sig-text-secondary);
 }
 
 .resend-meta {
@@ -232,8 +227,8 @@ button:disabled {
   align-content: center;
   justify-items: end;
   gap: 2px;
-  color: #64748b;
-  font-weight: 800;
+  color: var(--sig-muted);
+  font-weight: 600;
 }
 
 .resend-meta strong {
@@ -248,8 +243,8 @@ button:disabled {
 .resend-result pre {
   max-height: 220px;
   overflow: auto;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--sig-code-bg);
+  color: var(--sig-border);
   border-radius: 12px;
   padding: 12px;
 }
@@ -259,19 +254,19 @@ button:disabled {
   justify-content: space-between;
   gap: 16px;
   padding: 18px;
-  border-radius: 15px;
-  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  border: 1px solid var(--sig-border);
   margin-bottom: 16px;
 }
 
 .result-summary.ok {
-  background: #ecfdf5;
-  border-color: #bbf7d0;
+  background: var(--sig-success-bg);
+  border-color: var(--sig-success-border);
 }
 
 .result-summary.bad {
-  background: #fff7ed;
-  border-color: #fed7aa;
+  background: var(--sig-warning-bg);
+  border-color: var(--sig-warning-border);
 }
 
 .summary-numbers {
@@ -289,7 +284,7 @@ button:disabled {
 
 .summary-numbers small {
   color: var(--sig-muted);
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .section-block {
@@ -298,7 +293,7 @@ button:disabled {
 
 .section-block ul {
   margin: 10px 0 0;
-  color: #334155;
+  color: var(--sig-text-secondary);
 }
 
 .issue {
@@ -306,21 +301,21 @@ button:disabled {
   grid-template-columns: auto 1fr;
   gap: 12px;
   padding: 13px;
-  border: 1px solid #e5e9f5;
+  border: 1px solid var(--sig-border);
   border-radius: 14px;
   margin-top: 10px;
-  background: #f8fafc;
+  background: var(--sig-soft);
 }
 
 .issue strong {
-  color: #0f172a;
+  color: var(--sig-text);
 }
 
 .issue small {
   display: block;
-  color: #64748b;
+  color: var(--sig-muted);
   margin-top: 4px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
@@ -337,43 +332,43 @@ button:disabled {
 }
 
 .issue-meta span {
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--sig-card);
+  border: 1px solid var(--sig-border);
   border-radius: 999px;
-  color: #64748b;
+  color: var(--sig-muted);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   padding: 5px 9px;
   max-width: 100%;
   overflow-wrap: anywhere;
 }
 
 .issue-meta b {
-  color: #0f172a;
+  color: var(--sig-text);
 }
 
 .badge {
   border-radius: 999px;
   padding: 5px 10px;
-  font-weight: 900;
+  font-weight: 600;
   font-size: 11px;
   height: fit-content;
   text-transform: uppercase;
 }
 
 .badge.danger {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--sig-danger-bg);
+  color: var(--sig-danger);
 }
 
 .badge.warn {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--sig-warning-bg);
+  color: var(--sig-warning);
 }
 
 .badge.info {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--sig-info-bg);
+  color: var(--sig-info);
 }
 
 .check {
@@ -383,31 +378,31 @@ button:disabled {
   padding: 13px;
   border-radius: 14px;
   margin-top: 10px;
-  border: 1px solid #e5e9f5;
+  border: 1px solid var(--sig-border);
 }
 
 .check.ok {
-  background: #ecfdf5;
+  background: var(--sig-success-bg);
 }
 
 .check.bad {
-  background: #fef2f2;
+  background: var(--sig-danger-bg);
 }
 
 .check span {
-  font-weight: 900;
+  font-weight: 600;
   color: var(--sig-blue);
 }
 
 details summary {
   cursor: pointer;
   color: var(--sig-blue);
-  font-weight: 900;
+  font-weight: 600;
 }
 
 pre {
-  background: var(--sig-text);
-  color: #dbeafe;
+  background: var(--sig-code-bg);
+  color: var(--sig-code-text);
   padding: 18px;
   border-radius: 14px;
   overflow: auto;
@@ -420,13 +415,9 @@ pre {
     grid-template-columns: 1fr;
   }
 
-  .form-row {
-    grid-template-columns: 1fr;
-  }
 
-  textarea {
-    min-height: 360px;
-  }
+
+
 }
 
 @media (max-width: 980px) {
@@ -439,4 +430,37 @@ pre {
     justify-content: flex-start;
     width: 100%;
   }
+}
+
+.validator-header { flex-wrap: wrap; gap: 12px; }
+.validator-header__text { flex: 1 1 230px; }
+.validator-header__actions { flex: 0 1 auto; margin-top: 0; gap: 8px; }
+.validator-header__actions button { padding: 8px 12px; min-height: 34px; font-size: 12px; }
+.card-header p { font-size: 12px; line-height: 1.5; }
+.form-row > label { min-width: 0; }
+.form-row select { width: 100%; min-width: 0; min-height: 36px; padding: 8px 10px; border-radius: 7px; }
+.check-field { min-height: 36px; white-space: nowrap; }
+.validator-grid.has-content textarea { min-height: 360px; height: 520px; }
+@media (min-width: 1201px) {
+ .validator-grid.has-result { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); }
+ .has-result .validator-header { flex-direction: column; align-items: stretch; }
+ .has-result .validator-header__text { flex-basis: auto; }
+ .has-result .validator-header__actions { justify-content: flex-start; }
+ .has-result .form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+ .has-result .check-field { grid-column: 1 / -1; }
+}
+@media (min-width: 761px) and (max-width: 980px) {
+ .validator-header { flex-direction: row; align-items: center; }
+ .validator-header__actions { width: auto; }
+}
+@media (max-width: 760px) {
+ .validator-header__text { flex-basis: auto; }
+ .form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+ .check-field { grid-column: 1 / -1; }
+ textarea { height: 240px; }
+}
+@media (max-width: 480px) {
+ .form-row { grid-template-columns: minmax(0, 1fr); }
+ .validator-header__actions { gap: 6px; }
+ .validator-header__actions button { flex: 1 1 auto; }
 }

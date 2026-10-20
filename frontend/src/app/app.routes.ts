@@ -1,3 +1,4 @@
+import { RedesComponent } from './pages/redes/redes';
 import { Routes } from '@angular/router';
 import { LayoutComponent } from './layout/layout/layout';
 import { DashboardComponent } from './pages/dashboard/dashboard';
@@ -18,6 +19,7 @@ export const routes: Routes = [
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       { path: 'dashboard', component: DashboardComponent },
+      { path: 'redes', component: RedesComponent },
       { path: 'servicos', component: ServicosComponent },
       { path: 'arquivos', component: ArquivosComponent },
       { path: 'pedidos', component: PedidosComponent },

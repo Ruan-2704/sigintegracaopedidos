@@ -1,0 +1,47 @@
+<div class="page-title">
+  <div><h2>Redes da integração</h2><p>Gerencie a participação das redes na geração de arquivos e no validador de pedidos.</p></div>
+  <div class="actions"><button class="btn-secondary" (click)="carregar()" [disabled]="carregando || salvando">Atualizar</button>
+    <button class="btn-primary" (click)="editar()" [disabled]="carregando || salvando || !!formulario">Adicionar rede</button></div>
+</div>
+<div class="state-card notice" *ngIf="aviso" role="status">{{ aviso }}</div>
+<div class="state-card notice" *ngIf="mensagem" role="status">{{ mensagem }}</div>
+<div class="state-card error" *ngIf="erro" role="alert">{{ erro }}</div>
+<section class="filters-card" aria-label="Filtros de redes">
+  <div class="field grow"><label for="rede-busca">Buscar rede</label><input id="rede-busca" [(ngModel)]="busca" placeholder="Nome, código ou base" (keyup.enter)="aplicar()"></div>
+  <div class="field"><label for="rede-uso">Participação</label><select id="rede-uso" [(ngModel)]="uso" (change)="aplicar()">
+    <option value="">Todas</option><option value="geracao">Geração habilitada</option><option value="validador">Validador habilitado</option><option value="desabilitadas">Desabilitadas</option></select></div>
+  <div class="filter-actions"><button class="btn-primary" (click)="aplicar()">Filtrar</button><button class="btn-secondary" (click)="limpar()">Limpar</button></div>
+</section>
+<section class="editor" *ngIf="formulario" aria-labelledby="titulo-edicao">
+  <div class="modal-header"><h3 id="titulo-edicao">{{ formulario.versao ? 'Editar participação' : 'Adicionar rede à integração' }}</h3>
+    <button class="btn-secondary" (click)="fechar()" [disabled]="salvando">Cancelar</button></div>
+  <div class="form-grid">
+    <div class="field"><label for="rede-cadastro">Rede do cadastro central</label><select id="rede-cadastro" [(ngModel)]="formulario.codigo" (change)="trocarRede()" [disabled]="formulario.versao > 0 || verificando || salvando">
+      <option [ngValue]="null">Selecione uma rede</option><option *ngFor="let r of opcoes" [ngValue]="r.codigo">{{ r.nome }} · {{ r.codigo }}{{ r.cadastroAtivo ? '' : ' (inativa)' }}</option>
+    </select></div>
+    <div class="field"><label>Base cadastrada</label><div class="readonly">{{ redeSelecionada?.schemaNome || 'Selecione a rede' }}</div></div>
+  </div>
+  <p class="help">Nome, código e base vêm do cadastro central. As views são mantidas pela aplicação responsável.</p>
+  <div class="checks"><label><input type="checkbox" [(ngModel)]="formulario.geracao" [disabled]="salvando"> Habilitar geração de arquivos</label>
+    <label><input type="checkbox" [(ngModel)]="formulario.validador" [disabled]="salvando"> Habilitar validador de pedidos</label></div>
+  <div class="validation" *ngIf="diagnostico" role="status">
+    <div class="checks"><span class="badge" [class.good]="diagnostico.geracao">Geração: {{ diagnostico.geracao ? 'estrutura pronta' : 'verificar pendências' }}</span>
+      <span class="badge" [class.good]="diagnostico.validador">Validador: {{ diagnostico.validador ? 'estrutura pronta' : 'verificar pendências' }}</span></div>
+    <ul *ngIf="diagnostico.pendencias.length"><li *ngFor="let item of diagnostico.pendencias">{{ item }}</li></ul><p>{{ diagnostico.observacao }}</p>
+  </div>
+  <p class="help">A opção de geração será lida na próxima execução do gerador atualizado. Habilitar uma rede não reprocessa campanhas antigas nem exclui arquivos existentes.</p>
+  <div class="state-card error" *ngIf="erroFormulario" role="alert">{{ erroFormulario }}</div>
+  <div class="editor-footer"><button class="btn-secondary" (click)="verificar()" [disabled]="!formulario.codigo || verificando || salvando">{{ verificando ? 'Verificando...' : 'Validar estrutura' }}</button>
+    <button class="btn-primary" (click)="salvar()" [disabled]="!podeSalvar">{{ salvando ? 'Salvando...' : 'Salvar participação' }}</button></div>
+</section>
+<div class="summary-line"><span><strong>{{ filtradas.length }}</strong> redes configuradas</span></div>
+<div class="state-card" *ngIf="carregando">Carregando redes...</div>
+<div class="state-card" *ngIf="!carregando && !erro && !filtradas.length">Nenhuma rede configurada para os filtros selecionados.</div>
+<div class="table-card" *ngIf="!carregando && linhas.length">
+  <div class="table-scroll"><table><thead><tr><th>Código</th><th>Rede</th><th>Base</th><th>Cadastro central</th><th>Geração</th><th>Validador</th><th>Ações</th></tr></thead>
+    <tbody><tr *ngFor="let r of linhas"><td>{{ r.codigo }}</td><td>{{ r.nome }}</td><td>{{ r.schemaNome }}</td><td>{{ r.cadastroAtivo ? 'Ativo' : 'Inativo' }}</td>
+      <td><span class="badge" [class.good]="r.geracao">{{ r.geracao ? 'Habilitada' : 'Desabilitada' }}</span></td><td><span class="badge" [class.good]="r.validador">{{ r.validador ? 'Habilitado' : 'Desabilitado' }}</span></td>
+      <td><button class="btn-secondary" (click)="editar(r)" [disabled]="salvando || !!formulario">Editar e validar</button></td></tr></tbody></table></div>
+  <div class="pagination"><label for="rede-limite">Por página</label><select id="rede-limite" [(ngModel)]="limite" (change)="mudarPagina(1)"><option [ngValue]="10">10</option><option [ngValue]="20">20</option><option [ngValue]="50">50</option></select>
+    <span>Página {{ pagina }} de {{ totalPaginas }}</span><button class="btn-secondary" (click)="mudarPagina(pagina-1)" [disabled]="pagina === 1">Anterior</button><button class="btn-secondary" (click)="mudarPagina(pagina+1)" [disabled]="pagina >= totalPaginas">Próxima</button></div>
+</div>

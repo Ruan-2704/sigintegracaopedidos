@@ -1,5 +1,6 @@
 import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { IntegracaoService } from '../../services/service';
+import { corrigirCodificacaoTexto } from '../../shared/corrigir-codificacao-texto';
 
 @Component({
   selector: 'app-logs',
@@ -44,9 +45,9 @@ export class LogsComponent implements OnInit {
   }
   abrirAcessos(): void {
     this.filtroAcaoAuditoria = 'LOGIN_ACEITO,LOGIN_RECUSADO'; this.filtroStatusAuditoria='';
-    this.abaAtiva='auditoria'; this.carregarAuditoria(true);
+    this.paginaAuditoria=1; this.abaAtiva='auditoria'; this.carregarAuditoria(true);
   }
-  abrirAcoes(): void { this.filtroAcaoAuditoria=''; this.abaAtiva='auditoria'; this.carregarAuditoria(true); }
+  abrirAcoes(): void { this.filtroAcaoAuditoria=''; this.paginaAuditoria=1; this.abaAtiva='auditoria'; this.carregarAuditoria(true); }
   inicioPedidosApi = '';
   fimPedidosApi = '';
   pedidoPedidosApi = '';
@@ -88,9 +89,13 @@ export class LogsComponent implements OnInit {
   filtroAcaoAuditoria = '';
   filtroStatusAuditoria = '';
   limiteAuditoria = 50;
+  paginaAuditoria = 1;
+  totalAcoesAuditoria = 0;
+  totalPaginasAuditoria = 1;
+  private consultaAuditoria = 0;
   ultimaAtualizacaoAuditoria: Date | null = null;
   private readonly cacheKeyLogsCron = 'sig_integracao_cron_logs_cache';
-  private readonly cacheKeyAuditoria = 'sig_integracao_auditoria_cache';
+  private readonly cacheKeyAuditoria = 'sig_integracao_auditoria_cache_v2';
 
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
 
@@ -167,7 +172,7 @@ export class LogsComponent implements OnInit {
       force
     }).subscribe({
       next: (res) => {
-        this.logs = res.data || [];
+        this.logs = this.normalizarDescricoes(res.data || []);
         this.totalRegistros = res.meta?.total || this.logs.length;
         this.totalPaginas = res.meta?.totalPages || 1;
         this.ultimaAtualizacao = new Date();
@@ -212,7 +217,7 @@ export class LogsComponent implements OnInit {
     }).subscribe({
       next: (res:any) => {
         if (consulta !== this.consultaPedidosApi) return;
-        this.logsPedidosApi = res.data || [];
+        this.logsPedidosApi = (res.data || []).map((item: any) => ({ ...item, mensagem: corrigirCodificacaoTexto(item.mensagem) }));
         this.metaLogsPedidosApi = res.meta || null;
         this.arquivoLogsPedidosApi = res.arquivo || null;
         this.carregandoPedidosApi = false;
@@ -232,6 +237,11 @@ export class LogsComponent implements OnInit {
     this.niveisPedidosApi=[]; this.categoriasPedidosApi=[];
     this.inicioPedidosApi=''; this.fimPedidosApi=''; this.pedidoPedidosApi=''; this.campanhaPedidosApi='';
     this.filtrarPedidosApi();
+  }
+
+  alterarItensPorPaginaLogs(): void {
+    this.paginaAtual = 1;
+    this.carregar(true);
   }
 
   paginaAnterior(): void {
@@ -354,30 +364,38 @@ export class LogsComponent implements OnInit {
   }
 
   carregarAuditoria(force = false): void {
-    const temCache = !force && this.restaurarCacheAuditoria();
+    const consulta = ++this.consultaAuditoria;
+    if (!force) this.restaurarCacheAuditoria();
 
-    if (!force && !temCache) this.acoesPainel = [];
+    // Mantém as linhas durante a consulta para não encolher a página nem deslocar o foco.
 
     this.carregandoAuditoria = force || !this.acoesPainel.length;
     this.erroAuditoria = '';
 
     this.service.getAcoesPainel({
+      page: this.paginaAuditoria,
       limit: this.limiteAuditoria,
       acao: this.filtroAcaoAuditoria,
       status: this.filtroStatusAuditoria,
       force
     }).subscribe({
       next: (res) => {
+        if (consulta !== this.consultaAuditoria) return;
         this.acoesPainel = (res.data || []).map((item: any) => ({
           ...item,
+          mensagem: corrigirCodificacaoTexto(item.mensagem),
           detalheFormatado: this.formatarDetalheAuditoria(item.detalhe)
         }));
+        this.totalAcoesAuditoria = res.meta?.total ?? this.acoesPainel.length;
+        this.totalPaginasAuditoria = res.meta?.totalPages || 1;
+        this.paginaAuditoria = res.meta?.page || this.paginaAuditoria;
         this.ultimaAtualizacaoAuditoria = new Date();
         this.salvarCacheAuditoria();
         this.carregandoAuditoria = false;
         this.cdr.detectChanges();
       },
       error: (err) => {
+        if (consulta !== this.consultaAuditoria) return;
         console.error('Erro ao carregar acoes do painel:', err);
         this.erroAuditoria = 'Erro ao carregar acoes do painel.';
         this.carregandoAuditoria = false;
@@ -387,20 +405,60 @@ export class LogsComponent implements OnInit {
   }
 
   aplicarFiltroAuditoria(): void {
+    this.paginaAuditoria = 1;
     this.carregarAuditoria(true);
   }
 
+  mudarPaginaAuditoria(delta: number): void {
+    const pagina = this.paginaAuditoria + delta;
+    if (this.carregandoAuditoria || pagina < 1 || pagina > this.totalPaginasAuditoria) return;
+    this.paginaAuditoria = pagina;
+    this.carregarAuditoria();
+  }
+
   limparFiltroAuditoria(): void {
+    this.paginaAuditoria = 1;
     this.filtroAcaoAuditoria = '';
     this.filtroStatusAuditoria = '';
     this.limiteAuditoria = 50;
     this.carregarAuditoria(true);
   }
 
-  get acoesAuditoriaSelecionadas(): string[] { return this.filtroAcaoAuditoria.split(',').filter(Boolean); }
-  set acoesAuditoriaSelecionadas(value: string[]) { this.filtroAcaoAuditoria = value.filter(Boolean).join(','); }
-  get resultadosAuditoriaSelecionados(): string[] { return this.filtroStatusAuditoria.split(',').filter(Boolean); }
-  set resultadosAuditoriaSelecionados(value: string[]) { this.filtroStatusAuditoria = value.filter(Boolean).join(','); }
+  readonly opcoesAcoesAuditoria = [
+    { valor: 'LOGIN_ACEITO', nome: 'Login aceito' },
+    { valor: 'LOGIN_RECUSADO', nome: 'Login recusado' },
+    { valor: 'INICIAR_SERVICO', nome: 'Iniciar serviço' },
+    { valor: 'PARAR_SERVICO', nome: 'Parar serviço' },
+    { valor: 'SALVAR_CRON', nome: 'Salvar crontab' },
+    { valor: 'EDITAR_SCRIPT_SERVICO', nome: 'Editar script' },
+    { valor: 'EXCLUIR_ARQUIVO', nome: 'Excluir arquivo' }
+  ];
+  readonly opcoesStatusAuditoria = [
+    { valor: 'SUCESSO', nome: 'Sucesso' }, { valor: 'ERRO', nome: 'Erro' }
+  ];
+
+  auditoriaSelecionada(campo: 'acao' | 'status', valor: string): boolean {
+    return (campo === 'acao' ? this.filtroAcaoAuditoria : this.filtroStatusAuditoria).split(',').includes(valor);
+  }
+
+  alternarFiltroAuditoria(campo: 'acao' | 'status', valor: string): void {
+    const atual = campo === 'acao' ? this.filtroAcaoAuditoria : this.filtroStatusAuditoria;
+    const valores = atual.split(',').filter(Boolean);
+    const novo = valores.includes(valor) ? valores.filter(item => item !== valor) : [...valores, valor];
+    if (campo === 'acao') this.filtroAcaoAuditoria = novo.join(',');
+    else this.filtroStatusAuditoria = novo.join(',');
+  }
+
+  resumoFiltroAuditoria(campo: 'acao' | 'status'): string {
+    const valores = (campo === 'acao' ? this.filtroAcaoAuditoria : this.filtroStatusAuditoria).split(',').filter(Boolean);
+    if (!valores.length) return campo === 'acao' ? 'Todas as ações' : 'Todos os resultados';
+    const opcoes = campo === 'acao' ? this.opcoesAcoesAuditoria : this.opcoesStatusAuditoria;
+    return valores.length === 1 ? (opcoes.find(item => item.valor === valores[0])?.nome || valores[0]) : valores.length + ' selecionados';
+  }
+
+  rotuloAcaoAuditoria(valor: string): string {
+    return this.opcoesAcoesAuditoria.find(item => item.valor === valor)?.nome || valor;
+  }
 
   filtrosAuditoriaAtivos(): number {
     return [this.filtroAcaoAuditoria, this.filtroStatusAuditoria].filter(Boolean).length;
@@ -435,13 +493,21 @@ export class LogsComponent implements OnInit {
     });
   }
 
+  private normalizarDescricoes(logs: any[]): any[] {
+    return logs.map((log) => ({
+      ...log,
+      descricao: corrigirCodificacaoTexto(log.descricao),
+      nomeServico: corrigirCodificacaoTexto(log.nomeServico)
+    }));
+  }
+
   private restaurarCacheLocal(): boolean {
     try {
       const cache = JSON.parse(localStorage.getItem(this.cacheKey) || '{}');
       const item = cache?.[this.cacheId()];
 
       if (item?.data) {
-        this.logs = item.data || [];
+        this.logs = this.normalizarDescricoes(item.data || []);
         this.totalRegistros = item.meta?.total || this.logs.length;
         this.totalPaginas = item.meta?.totalPages || 1;
         this.ultimaAtualizacao = item.atualizadoEm ? new Date(item.atualizadoEm) : null;
@@ -485,7 +551,7 @@ export class LogsComponent implements OnInit {
       const item = cache?.[this.cacheIdPedidosApi()];
 
       if (item?.data) {
-        this.logsPedidosApi = item.data || [];
+        this.logsPedidosApi = (item.data || []).map((evento: any) => ({ ...evento, mensagem: corrigirCodificacaoTexto(evento.mensagem) }));
         this.metaLogsPedidosApi = item.meta || null;
         this.arquivoLogsPedidosApi = item.arquivo || null;
         return true;
@@ -532,6 +598,7 @@ export class LogsComponent implements OnInit {
 
   private cacheIdAuditoria(): string {
     return JSON.stringify({
+      page: this.paginaAuditoria,
       acao: this.filtroAcaoAuditoria || '',
       status: this.filtroStatusAuditoria || '',
       limit: this.limiteAuditoria
@@ -546,8 +613,11 @@ export class LogsComponent implements OnInit {
       if (item?.data) {
         this.acoesPainel = (item.data || []).map((acao: any) => ({
           ...acao,
+          mensagem: corrigirCodificacaoTexto(acao.mensagem),
           detalheFormatado: acao.detalheFormatado || this.formatarDetalheAuditoria(acao.detalhe)
         }));
+        this.totalAcoesAuditoria = item.meta?.total ?? this.acoesPainel.length;
+        this.totalPaginasAuditoria = item.meta?.totalPages || 1;
         this.ultimaAtualizacaoAuditoria = item.atualizadoEm ? new Date(item.atualizadoEm) : null;
         return true;
       }
@@ -563,6 +633,7 @@ export class LogsComponent implements OnInit {
       const cache = JSON.parse(localStorage.getItem(this.cacheKeyAuditoria) || '{}');
       cache[this.cacheIdAuditoria()] = {
         data: this.acoesPainel,
+        meta: { total: this.totalAcoesAuditoria, totalPages: this.totalPaginasAuditoria },
         atualizadoEm: new Date().toISOString()
       };
       localStorage.setItem(this.cacheKeyAuditoria, JSON.stringify(cache));

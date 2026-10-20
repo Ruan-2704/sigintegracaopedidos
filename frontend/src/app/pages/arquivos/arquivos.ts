@@ -17,6 +17,7 @@ export class ArquivosComponent implements OnInit {
   carregandoPreview = false;
   erro = '';
   filtro = '';
+  private arquivoExato = '';
   ultimaAtualizacao: Date | null = null;
   paginaAtual = 1;
   itensPorPagina = 200;
@@ -28,13 +29,15 @@ export class ArquivosComponent implements OnInit {
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
 
   ngOnInit(): void {
-    const search = new URLSearchParams(window.location.search).get('search');
+    const params = new URLSearchParams(window.location.search);
+    this.arquivoExato = params.get('arquivo') || '';
+    const search = params.get('search') || this.arquivoExato;
     if (search) {
       this.filtro = search;
       this.paginaAtual = 1;
     }
     this.restaurarCacheLocal();
-    this.carregar(Boolean(search));
+    this.carregar();
   }
 
   carregar(force = false): void {
@@ -52,6 +55,7 @@ export class ArquivosComponent implements OnInit {
       page: this.paginaAtual,
       limit: this.itensPorPagina,
       search: this.filtro,
+      arquivo: this.filtro === this.arquivoExato ? this.arquivoExato : undefined,
       force
     }).subscribe({
       next: (res) => {
@@ -72,9 +76,9 @@ export class ArquivosComponent implements OnInit {
     });
   }
 
-  aplicarFiltro(): void { this.paginaAtual = 1; this.carregar(true); }
-  limparFiltro(): void { this.filtro = ''; this.paginaAtual = 1; this.carregar(true); }
-  alterarItensPorPagina(): void { this.paginaAtual = 1; this.carregar(true); }
+  aplicarFiltro(): void { this.arquivoExato = ''; this.paginaAtual = 1; this.carregar(); }
+  limparFiltro(): void { this.arquivoExato = ''; this.filtro = ''; this.paginaAtual = 1; this.carregar(); }
+  alterarItensPorPagina(): void { this.paginaAtual = 1; this.carregar(); }
 
   ordenarPor(campo: string): void {
     if (this.ordenarCampo === campo) {
@@ -165,6 +169,7 @@ export class ArquivosComponent implements OnInit {
       page: this.paginaAtual,
       limit: this.itensPorPagina,
       search: this.filtro || '',
+      arquivo: this.filtro === this.arquivoExato ? this.arquivoExato : '',
       ordenarCampo: this.ordenarCampo || '',
       ordenarDirecao: this.ordenarDirecao || ''
     });

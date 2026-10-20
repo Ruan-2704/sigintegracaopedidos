@@ -1,57 +1,42 @@
 <div class="shell" [class.sidebar-collapsed]="!menuAberto">
-  <header class="topbar">
-    <div class="brand-inline">
-      <button class="menu-toggle" type="button" (click)="toggleMenu()" [attr.aria-label]="menuAberto ? 'Fechar menu' : 'Abrir menu'">
-        <span *ngIf="menuAberto">X</span>
-        <span *ngIf="!menuAberto">=</span>
+  <button *ngIf="menuAberto" class="sidebar-backdrop" type="button" aria-label="Fechar menu" (click)="toggleMenu()"></button>
+  <aside class="sidebar" [class.open]="menuAberto" aria-label="Menu principal">
+    <div class="sidebar-brand">
+      <a routerLink="/dashboard" class="brand" title="SIG Cotação">
+        <img src="assets/logo-sicotacao.webp" alt="" />
+        <div class="brand-text"><strong>SIG <span>Cotação</span></strong><small>Integrações e pedidos</small></div>
+      </a>
+      <button class="collapse-toggle" type="button" (click)="toggleMenu()" [attr.aria-label]="menuAberto ? 'Recolher menu' : 'Expandir menu'" [attr.aria-expanded]="menuAberto">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3ZM9 4v16m7-12-4 4 4 4" /></svg>
       </button>
-
-      <div class="brand-mark">
-        <img src="assets/logo-sicotacao.webp" alt="SIG Cotação" />
-      </div>
-
-      <div class="brand-text">
-        <strong>SIG Cotação</strong>
-      </div>
     </div>
-
-    <div class="top-actions">
-
-      <span class="user-pill">Admin</span>
-    </div>
-  </header>
-
-  <aside class="sidebar" [class.open]="menuAberto">
-    <div class="sidebar-title">
-      <strong>Dashboard</strong>
-      <small>Página inicial</small>
-    </div>
-
-    <nav class="nav">
-      <a routerLink="/dashboard" routerLinkActive="active"><span>D</span>Dashboard</a>
-      <a routerLink="/servicos" routerLinkActive="active"><span>S</span>Serviços e Execuções</a>
-      <a routerLink="/arquivos" routerLinkActive="active"><span>A</span>Arquivos Gerados</a>
-      <a routerLink="/pedidos" routerLinkActive="active"><span>P</span>Pedidos da Integração</a>
-      <a routerLink="/validador-pedido" routerLinkActive="active"><span>V</span>Validador de Pedido</a>
-      <a routerLink="/logs" routerLinkActive="active"><span>L</span>Logs e Auditoria</a>
+    <nav class="nav" aria-label="Navegação">
+      <a *ngFor="let item of navItems" [routerLink]="item.route" (click)="fecharMenuMobile()" routerLinkActive="active" ariaCurrentWhenActive="page" [title]="item.label">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="item.icon" /></svg>
+        <span class="nav-label">{{ item.label }}</span>
+      </a>
     </nav>
-
     <div class="sidebar-footer">
-      <div class="mini-status">
+      <app-theme-toggle></app-theme-toggle>
+      <div class="mini-status" [title]="'API: ' + status + ' · Banco: ' + banco + ' · Bucket: ' + bucket">
         <span class="dot" [class.error]="status === 'erro' || banco === 'erro' || bucket === 'erro'"></span>
-        <div>
-          <strong>{{ status | titlecase }}</strong>
-          <small>Banco: {{ banco }} - Bucket: {{ bucket }}</small>
-        </div>
+        <div><strong>{{ status | titlecase }}</strong><small>Banco: {{ banco }} · Bucket: {{ bucket }}</small></div>
       </div>
-
-      <button class="logout" type="button" (click)="sair()">Sair do painel</button>
+      <button class="logout" type="button" (click)="sair()" title="Sair do painel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v16h5m5-12 4 4-4 4m-7-4h14" /></svg><span>Sair do painel</span>
+      </button>
     </div>
   </aside>
-
   <main class="content" [class.menu-open]="menuAberto">
-    <section class="page-wrapper">
-      <router-outlet></router-outlet>
-    </section>
+    <header class="topbar">
+      <div class="workspace-heading">
+        <button class="menu-toggle" type="button" (click)="toggleMenu()" [attr.aria-label]="menuAberto ? 'Recolher menu' : 'Expandir menu'" [attr.aria-expanded]="menuAberto">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+        </button>
+        <span>Painel operacional</span>
+      </div>
+      <div class="top-actions"><span class="user-avatar" aria-hidden="true">A</span><span class="user-name">Admin</span></div>
+    </header>
+    <section class="page-wrapper"><router-outlet></router-outlet></section>
   </main>
 </div>

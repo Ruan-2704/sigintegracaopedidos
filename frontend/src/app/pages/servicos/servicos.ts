@@ -1,3 +1,5 @@
+import { Router } from '@angular/router';
+import { analisarResultadosGeracao, agruparPendenciasGeracao, PendenciaGeracao } from './resultados-geracao';
 import { AfterViewChecked, ChangeDetectorRef, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { IntegracaoService, ServicoStatus } from '../../services/service';
 
@@ -43,7 +45,143 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
   editorErro = '';
   editorMeta: any = null;
   editorTipo: 'script' | 'cron' = 'script';
+  diagnosticosCampanhas: Record<string, { carregando: boolean; dados?: any; erro?: string }> = {};
+  private destruido = false;
+  chaveDiagnostico(item: PendenciaGeracao): string { return item.campanha + ':' + item.rede; }
+  pendenciasExpandidas = false;
+  private filaConferencias: { item: PendenciaGeracao; chave: string }[] = [];
+  private consultasAtivas = 0;
+  detalhesExpandidos = new Set<string>();
+  alternarTodasPendencias(): void { this.pendenciasExpandidas = !this.pendenciasExpandidas; }
+  registrarExpansao(item: PendenciaGeracao, event: Event): void {
+    const chave = this.chaveDiagnostico(item);
+    if ((event.target as HTMLDetailsElement).open) this.detalhesExpandidos.add(chave);
+    else this.detalhesExpandidos.delete(chave);
+    this.conferirMotivo(item, event);
+  }
+  conferirMotivo(item: PendenciaGeracao, event: Event): void {
+    if (!(event.target as HTMLDetailsElement).open) return;
+    const chave = this.chaveDiagnostico(item);
+    const anterior = this.diagnosticosCampanhas[chave];
+    if (anterior?.carregando || (anterior?.dados && Date.now() - Date.parse(anterior.dados.consultadoEm) < 60000)) return;
+    this.diagnosticosCampanhas[chave] = { carregando: true };
+    this.filaConferencias.push({ item, chave });
+    this.processarFilaConferencias();
+  }
+  private processarFilaConferencias(): void {
+    while (!this.destruido && this.consultasAtivas < 2 && this.filaConferencias.length) {
+      const { item, chave } = this.filaConferencias.shift()!;
+      this.consultasAtivas++;
+      const concluir = () => { this.consultasAtivas--; this.processarFilaConferencias(); };
+      this.service.getDiagnosticoCampanha(item.campanha, /^\d+$/.test(item.rede) ? item.rede : '').subscribe({
+        next: res => {
+          if (!this.destruido) { this.diagnosticosCampanhas[chave] = { carregando: false, dados: res.data };
+            const nomes = { ...this.nomesRedes };
+            for (const r of res.data?.redes || []) if (r.codigo != null && r.nome) nomes[String(r.codigo)] = r.nome;
+            if (Object.keys(nomes).some(k => nomes[k] !== this.nomesRedes[k])) this.nomesRedes = nomes;
+            this.cdr.detectChanges(); }
+          concluir();
+        },
+        error: e => {
+          if (!this.destruido) { this.diagnosticosCampanhas[chave] = { carregando: false, erro: e?.error?.error || e?.error?.message || 'Não foi possível conferir agora.' }; this.cdr.detectChanges(); }
+          concluir();
+        }
+      });
+    }
+  }
+  tentarConferencia(item: PendenciaGeracao): void {
+    delete this.diagnosticosCampanhas[this.chaveDiagnostico(item)];
+    this.conferirMotivo(item, { target: { open: true } } as unknown as Event);
+  }
   arquivosGeradosModalAberto = false;
+  abaResultados: 'arquivos' | 'pendencias' = 'arquivos';
+  arquivosVisitados = false;
+  pendenciasVisitadas = false;
+  paginaPendencias = 1;
+  paginaArquivos = 1;
+  readonly tamanhoResultados = 30;
+  private nomesRedes: Record<string, string> = {};
+  private gruposFonte: PendenciaGeracao[] | null = null;
+  private gruposNomes: Record<string, string> | null = null;
+  private gruposModal: PendenciaGeracao[] = [];
+  private linhasFonte: PendenciaGeracao[] | null = null;
+  private linhasPagina = 0;
+  private linhasCache: PendenciaGeracao[] = [];
+  private arquivosFonte: string[] | null = null;
+  private arquivosPagina = 0;
+  private arquivosCache: string[] = [];
+  trocarAbaResultados(aba: 'arquivos' | 'pendencias'): void {
+    this.abaResultados = aba;
+    if (aba === 'arquivos') this.arquivosVisitados = true;
+    else this.pendenciasVisitadas = true;
+  }
+  trackPendencia(_index: number, item: PendenciaGeracao): string { return item.campanha + ':' + item.rede; }
+  trackArquivo(_index: number, nome: string): string { return nome; }
+  get totalPaginasPendencias(): number { return Math.max(1, Math.ceil(this.pendenciasModal().length / this.tamanhoResultados)); }
+  get totalPaginasArquivos(): number { return Math.max(1, Math.ceil(this.arquivosModal().length / this.tamanhoResultados)); }
+  pendenciasVisiveis(): PendenciaGeracao[] {
+    const fonte = this.pendenciasModal();
+    this.paginaPendencias = Math.min(this.paginaPendencias, this.totalPaginasPendencias);
+    if (this.linhasFonte !== fonte || this.linhasPagina !== this.paginaPendencias) {
+      this.linhasFonte = fonte; this.linhasPagina = this.paginaPendencias;
+      this.linhasCache = fonte.slice((this.paginaPendencias - 1) * this.tamanhoResultados, this.paginaPendencias * this.tamanhoResultados);
+    }
+    return this.linhasCache;
+  }
+  arquivosVisiveis(): string[] {
+    const fonte = this.arquivosModal();
+    this.paginaArquivos = Math.min(this.paginaArquivos, this.totalPaginasArquivos);
+    if (this.arquivosFonte !== fonte || this.arquivosPagina !== this.paginaArquivos) {
+      this.arquivosFonte = fonte; this.arquivosPagina = this.paginaArquivos;
+      this.arquivosCache = fonte.slice((this.paginaArquivos - 1) * this.tamanhoResultados, this.paginaArquivos * this.tamanhoResultados);
+    }
+    return this.arquivosCache;
+  }
+  private carregarNomesRedes(): void {
+    this.service.getRedesIntegracao().subscribe({ next: res => {
+      if (this.destruido) return;
+      const nomes: Record<string, string> = {};
+      for (const r of res.data?.catalogo || []) if (r.codigo != null && r.nome) nomes[String(r.codigo)] = r.nome;
+      this.nomesRedes = nomes; this.cdr.detectChanges();
+    }, error: () => { /* O diagnostico pode fornecer o nome ao expandir. */ } });
+  }
+  resultadosPersistidos: any = null;
+  erroResultados = '';
+  consultandoResultados = false;
+  modalPersistido = false;
+  pendenciasPersistidas: PendenciaGeracao[] = [];
+  carregarResultadosGeracao(force = false): void {
+    if (this.consultandoResultados) return;
+    this.consultandoResultados = true;
+    this.service.getResultadosGeracao(force).subscribe({ next: res => {
+      this.resultadosPersistidos = res.data;
+      this.pendenciasPersistidas = agruparPendenciasGeracao(analisarResultadosGeracao((res.data.resultados || []).map((e: any) => '[CAMPANHA_RESULTADO] ' + JSON.stringify(e))).pendencias);
+      this.erroResultados = ''; this.consultandoResultados = false; this.cdr.detectChanges();
+    }, error: () => {
+      this.erroResultados = 'Não foi possível atualizar os resultados da geração. Os dados anteriores podem estar desatualizados.';
+      this.consultandoResultados = false; this.cdr.detectChanges();
+    }});
+  }
+  private logsAnalisados: string[] | null = null;
+  private analiseLogs = { arquivos: [] as string[], pendencias: [] as PendenciaGeracao[] };
+  private analisarLogs(): typeof this.analiseLogs {
+    if (this.logsAnalisados !== this.logs) {
+      this.logsAnalisados = this.logs;
+      this.analiseLogs = analisarResultadosGeracao(this.logs);
+    }
+    return this.analiseLogs;
+  }
+  pendenciasGeracao(): PendenciaGeracao[] { return this.analisarLogs().pendencias; }
+  pendenciasModal(): PendenciaGeracao[] {
+    const fonte = this.modalPersistido ? this.pendenciasPersistidas : this.pendenciasGeracao();
+    if (this.gruposFonte !== fonte || this.gruposNomes !== this.nomesRedes) {
+      this.gruposFonte = fonte; this.gruposNomes = this.nomesRedes;
+      this.gruposModal = agruparPendenciasGeracao(fonte, this.nomesRedes);
+    }
+    return this.gruposModal;
+  }
+  arquivosModal(): string[] { return this.modalPersistido ? (this.resultadosPersistidos?.arquivos || []) : this.arquivosGerados(); }
+
   private timer?: number;
   private logsStream?: EventSource;
   private deveRolarTerminal = false;
@@ -63,16 +201,20 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
   reconectarTerminal(): void { this.tentativasReconexao = 0; this.conectarStreamLogs(); }
 
 
-  constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
+  constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef, private router: Router) {}
 
   ngOnInit(): void {
     this.restaurarCacheLocal();
     this.carregar(!this.servicos.length);
     this.carregarDiagnosticoLogs(false);
-    this.timer = window.setInterval(() => this.carregar(false), 60000);
+    this.carregarResultadosGeracao();
+    this.carregarNomesRedes();
+    this.timer = window.setInterval(() => { this.carregar(false); this.carregarResultadosGeracao(); }, 60000);
   }
 
   ngOnDestroy(): void {
+    this.destruido = true;
+    this.filaConferencias = [];
     if (this.timer) window.clearInterval(this.timer);
     this.fecharStreamLogs();
   }
@@ -414,34 +556,15 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
     });
   }
 
-  arquivosGerados(): string[] {
-    const encontrados = new Set<string>();
-    const olsProcessadas = new Set<string>();
-    let houveGeracao = false;
+  arquivosGerados(): string[] { return this.analisarLogs().arquivos; }
 
-    for (const linha of this.logs) {
-      const texto = String(linha || '');
-      const matches = texto.match(/[A-Za-z0-9_.-]+\.json\b/gi) || [];
-      matches.forEach((arquivo) => encontrados.add(arquivo.split('/').pop() || arquivo));
-
-      const olMatch = texto.match(/(?:FIM PROCESSAMENTO OL|Concluindo OL|INICIO PROCESSAMENTO OL(?: MULTI-REDE)?|Analise OL)\s*:?\s*(\d+)/i);
-      if (olMatch?.[1]) {
-        olsProcessadas.add(olMatch[1]);
-      }
-
-      if (/(Status:\s*GERAD|Finalizado|upload GCS)/i.test(texto)) {
-        houveGeracao = true;
-      }
-    }
-
-    if (!encontrados.size && houveGeracao) {
-      olsProcessadas.forEach((ol) => encontrados.add(`${ol}.json`));
-    }
-
-    return Array.from(encontrados).sort();
-  }
-
-  abrirArquivosGerados(): void {
+  abrirArquivosGerados(persistidos = false): void {
+    this.pendenciasExpandidas = false;
+    this.detalhesExpandidos.clear();
+    this.paginaPendencias = this.paginaArquivos = 1;
+    this.arquivosVisitados = this.pendenciasVisitadas = false;
+    this.modalPersistido = persistidos;
+    this.trocarAbaResultados(this.pendenciasModal().length ? 'pendencias' : 'arquivos');
     this.arquivosGeradosModalAberto = true;
     this.cdr.detectChanges();
   }
@@ -452,7 +575,7 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   abrirArquivoGerado(arquivo: string): void {
-    window.location.href = `/arquivos?search=${encodeURIComponent(arquivo)}`;
+    this.router.navigate(['/arquivos'], { queryParams: { arquivo, search: arquivo } });
   }
 
   acompanharTerminal(): void {

@@ -20,7 +20,7 @@ export class ValidadorPedidoComponent implements OnInit {
   avisoDeteccao = '';
   resultado: any = null;
   resultadoReenvio: any = null;
-  redes: any[] = this.redesFallback();
+  redes: any[] = [];
   private detectarTimer: any = null;
 
   constructor(private service: IntegracaoService, private cdr: ChangeDetectorRef) {}
@@ -35,7 +35,8 @@ export class ValidadorPedidoComponent implements OnInit {
     this.service.getValidadorMetadados().subscribe({
       next: (res: any) => {
         const data = res.data || res;
-        this.redes = data.redes?.length ? data.redes : this.redesFallback();
+        this.redes = data.redes || [];
+        if (!this.redes.length) { this.rede = ''; this.avisoDeteccao = 'Nenhuma rede habilitada para o validador. Consulte Redes da integração.'; }
 
         if (!this.redes.some((item) => item.schema === this.rede) && this.redes.length) {
           this.rede = this.redes[0].schema;
@@ -45,7 +46,9 @@ export class ValidadorPedidoComponent implements OnInit {
         this.cdr.detectChanges();
       },
       error: () => {
-        this.redes = this.redesFallback();
+        this.redes = [];
+        this.rede = '';
+        this.erro = 'Não foi possível consultar as redes habilitadas. Atualize a página ou verifique a configuração da integração.';
         this.carregandoMetadados = false;
         this.cdr.detectChanges();
       }
@@ -99,34 +102,6 @@ export class ValidadorPedidoComponent implements OnInit {
         this.cdr.detectChanges();
       }
     });
-  }
-
-  private tabelasReferenciaFallback(): string[] {
-    return [
-      'farmacias',
-      'operacoes_logisticas',
-      'farmacias_opl',
-      'fornecedores',
-      'fornecedores_participa_operacao_logistica',
-      'medicamentos',
-      'medicamentos_opl'
-    ];
-  }
-
-  private redesFallback(): any[] {
-    const tabelas = this.tabelasReferenciaFallback().map((nome) => ({ nome, referencia: true }));
-
-    return [
-      { schema: 'redecomprecerto', nome: 'Grupo Compre Certo', tabelas },
-      { schema: 'drogarede', nome: 'Droga Rede', tabelas },
-      { schema: 'nossarede', nome: 'Nossa Rede', tabelas },
-      { schema: 'farmelhor', nome: 'FarMelhor', tabelas },
-      { schema: 'redefarma', nome: 'RedeFarma', tabelas },
-      { schema: 'redemgfarma', nome: 'Rede MG Farma', tabelas },
-      { schema: 'mercaweb', nome: 'Merca Web', tabelas },
-      { schema: 'vidafarmacias', nome: 'Vida Farmacias', tabelas },
-      { schema: 'grupoadmpharma', nome: 'Grupo ADM Pharma', tabelas }
-    ];
   }
 
   validar(): void {

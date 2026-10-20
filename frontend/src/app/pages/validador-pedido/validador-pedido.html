@@ -6,7 +6,7 @@
   </div>
 </section>
 
-<div class="validator-grid">
+<div class="validator-grid" [class.has-result]="!!resultado" [class.has-content]="!!jsonPedido.trim() || !!resultado || !!resultadoReenvio">
   <section class="card input-card">
     <div class="card-header validator-header">
       <div class="validator-header__text">
@@ -41,16 +41,17 @@
         </select>
       </label>
 
-      <label class="check-field">
-        <input type="checkbox" [(ngModel)]="validarBanco" />
-        Validar vínculos no banco
-      </label>
       <label>
         Integradora do reenvio
         <select [(ngModel)]="integradoraReenvio">
           <option value="SMART">SmartPed</option>
           <option value="COTEFACIL">Cotefacil</option>
         </select>
+      </label>
+
+      <label class="check-field">
+        <input type="checkbox" [(ngModel)]="validarBanco" />
+        Validar vínculos no banco
       </label>
     </div>
 
@@ -61,6 +62,7 @@
     <textarea
       [(ngModel)]="jsonPedido"
       (ngModelChange)="onJsonChange($event)"
+      aria-label="JSON do pedido"
       spellcheck="false"
       placeholder="Cole aqui o JSON completo do pedido..."
     ></textarea>

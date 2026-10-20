@@ -1,0 +1,21 @@
+:host { display: block; }
+.theme-switch { display: flex; gap: 3px; padding: 4px; border: 1px solid var(--sig-border); border-radius: 9px; background: var(--sig-soft); }
+button { display: flex; flex: 1 1 0; min-width: 0; align-items: center; justify-content: center; gap: 4px; padding: 7px 5px; min-height: 32px; border: 0; border-radius: 6px; background: transparent; color: var(--sig-muted); font-size: 11px; font-weight: 500; cursor: pointer; }
+button:hover { color: var(--sig-text); background: var(--sig-hover); }
+button.active { color: var(--sig-text); background: var(--sig-card); box-shadow: 0 1px 3px rgb(0 0 0 / .08); }
+svg { width: 15px; height: 15px; flex-shrink: 0; }
+:host-context(.sidebar) {
+  .theme-switch { background: #1e293b; border-color: #334155; }
+  button { color: #94a3b8; }
+  button:hover { color: #f1f5f9; background: #334155; }
+  button.active { color: #fff; background: #334155; }
+}
+:host-context(.sidebar-collapsed) {
+  .theme-switch { flex-direction: column; }
+  button { padding: 8px; }
+  button span { display: none; }
+}
+@media (max-width: 980px) {
+  :host-context(.sidebar-collapsed) .theme-switch { flex-direction: row; }
+  :host-context(.sidebar-collapsed) button span { display: inline; }
+}

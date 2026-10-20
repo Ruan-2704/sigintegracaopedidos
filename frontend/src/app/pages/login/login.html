@@ -1,39 +1,15 @@
 <main class="login-page">
-  <section class="login-hero" aria-label="SIG Cotacao"></section>
-
-  <section class="login-panel">
+  <section class="login-panel" aria-label="Acesso ao SIG Cotação">
     <form class="login-card" (ngSubmit)="entrar()">
-      <div class="login-brand">
-        <img src="assets/logo-sicotacao.webp" alt="SIG Cotacao" />
-        <div>
-          <small>Painel operacional</small>
-          <strong>SIG Cotacao</strong>
-        </div>
-      </div>
-
-      <div class="login-heading">
-        <h2>Acesso ao painel</h2>
-        <p>Informe o usuario e a senha para acessar o painel.</p>
-      </div>
-
-      <label>Usuario</label>
-      <div class="input-line">
-        <span>*</span>
-        <input name="usuario" [(ngModel)]="usuario" placeholder="Digite o usuario" />
-      </div>
-
-      <label>Senha</label>
-      <div class="input-line">
-        <span>#</span>
-        <input name="token" [(ngModel)]="token" type="password" placeholder="Digite a senha" />
-      </div>
-
-      <button type="submit" [disabled]="carregando || !token.trim()">
-        {{ carregando ? 'Validando acesso...' : 'Acessar painel' }}
-      </button>
-
-      <div *ngIf="erro" class="erro">{{ erro }}</div>
-      <small class="version">SIG Cotacao - Integracoes Cotefacil / SmartPed</small>
+      <div class="login-brand"><img src="assets/logo-sicotacao.webp" alt="" /><div><strong>SIG <span>Cotação</span></strong><small>Painel de integrações</small></div></div>
+      <div class="login-heading"><h2>Acesso ao painel</h2><p>Acompanhe seus pedidos e integrações.</p></div>
+      <label for="login-usuario">Usuário</label>
+      <div class="input-line"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21v-2a6 6 0 0 0-6-6h-4a6 6 0 0 0-6 6v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0" /></svg><input id="login-usuario" name="usuario" [(ngModel)]="usuario" autocomplete="username" placeholder="Digite o usuário" /></div>
+      <label for="login-senha">Senha</label>
+      <div class="input-line"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v11H4Zm4 0V6a4 4 0 0 1 8 0v4m-4 5v2" /></svg><input id="login-senha" name="token" [(ngModel)]="token" type="password" autocomplete="current-password" placeholder="Digite a senha" /></div>
+      <button class="login-submit" type="submit" [disabled]="carregando || !token.trim()">{{ carregando ? 'Validando acesso...' : 'Acessar painel' }}</button>
+      <div *ngIf="erro" class="erro" role="alert">{{ erro }}</div>
+      <small class="version">SIG Cotação · Cotefácil / SmartPed</small>
     </form>
   </section>
 </main>

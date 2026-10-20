@@ -18,8 +18,7 @@
     <span>geração e exclusão</span>
   </button>
   <button type="button" [class.active]="abaAtiva === 'operacionais'" (click)="trocarAba('operacionais')"><strong>Eventos dos serviços</strong><span>falhas, execuções e disponibilidade</span></button>
-  <button type="button" [class.active]="abaAtiva === 'auditoria' && somenteAcessosAuditoria" (click)="abrirAcessos()"><strong>Acessos ao painel</strong><span>login aceito e recusado, horário e IP</span></button>
-  <button type="button" [class.active]="abaAtiva === 'auditoria' && !somenteAcessosAuditoria" (click)="abrirAcoes()"><strong>Ações do painel</strong><span>usuário, ação e resultado</span></button>
+  <button type="button" [class.active]="abaAtiva === 'auditoria'" (click)="trocarAba('auditoria')"><strong>Acessos e ações do painel</strong><span>login, usuário, ação e resultado</span></button>
 </section>
 
 <section *ngIf="abaAtiva === 'operacionais'">
@@ -30,11 +29,11 @@
     </div>
 
     <div class="field">
-      <label>Servico</label>
+      <label>Serviço</label>
       <select [(ngModel)]="servico" (change)="aplicarFiltro()">
         <option value="">Todos</option>
-        <option value="geracao">Geracao</option>
-        <option value="exclusao">Exclusao</option>
+        <option value="geracao">Geração</option>
+        <option value="exclusao">Exclusão</option>
         <option value="pedidos">Pedidos</option>
       </select>
     </div>
@@ -87,6 +86,8 @@
     <span *ngIf="ultimaAtualizacao">Atualizado em {{ ultimaAtualizacao | date:'dd/MM/yyyy HH:mm:ss' }}</span>
   </div>
 
+  <ng-container *ngTemplateOutlet="paginacaoOperacional"></ng-container>
+
   <div *ngIf="carregando" class="state-card">Carregando logs...</div>
   <div *ngIf="!carregando && erro" class="state-card error">{{ erro }}</div>
   <div *ngIf="!carregando && !erro && logs.length === 0" class="state-card">Nenhum log encontrado.</div>
@@ -113,16 +114,12 @@
           <span *ngIf="log.usuario"><b>Usuario</b>{{ log.usuario }}</span>
         </div>
 
-        <pre *ngIf="detalheFormatado(log)">{{ detalheFormatado(log) }}</pre>
+        <details class="event-details" *ngIf="detalheFormatado(log)"><summary>Ver detalhes do evento</summary><pre>{{ detalheFormatado(log) }}</pre></details>
       </div>
     </div>
   </div>
 
-  <div class="pagination" *ngIf="!carregando && logs.length > 0">
-    <button type="button" class="btn-secondary" (click)="paginaAnterior()" [disabled]="paginaAtual === 1">Anterior</button>
-    <span>Pagina {{ paginaAtual }} de {{ totalPaginas }}</span>
-    <button type="button" class="btn-secondary" (click)="proximaPagina()" [disabled]="paginaAtual === totalPaginas">Proxima</button>
-  </div>
+  <ng-container *ngTemplateOutlet="paginacaoOperacional"></ng-container>
 </section>
 
 <section class="api-log-card" *ngIf="abaAtiva === 'pedidos-api'">
@@ -253,29 +250,28 @@
 
     <div class="filters-grid audit-filters-grid">
       <div class="field">
-        <label>Acao</label>
-        <select multiple size="5" [(ngModel)]="acoesAuditoriaSelecionadas">
-          <option value="LOGIN_ACEITO">Login aceito</option><option value="LOGIN_RECUSADO">Login recusado</option>
-          <option value="">Todas</option>
-          <option value="INICIAR_SERVICO">Iniciar servico</option>
-          <option value="PARAR_SERVICO">Parar servico</option>
-          <option value="SALVAR_CRON">Salvar crontab</option>
-          <option value="EDITAR_SCRIPT_SERVICO">Editar script</option>
-          <option value="EXCLUIR_ARQUIVO">Excluir arquivo</option>
-        </select>
+        <label>Ação</label>
+        <details class="multi-filter audit-multi-filter">
+          <summary>{{ resumoFiltroAuditoria('acao') }}</summary>
+          <div class="filter-options">
+            <label><input type="checkbox" [checked]="!filtroAcaoAuditoria" (change)="filtroAcaoAuditoria = ''" />Todas as ações</label>
+            <label *ngFor="let opcao of opcoesAcoesAuditoria"><input type="checkbox" [checked]="auditoriaSelecionada('acao', opcao.valor)" (change)="alternarFiltroAuditoria('acao', opcao.valor)" />{{ opcao.nome }}</label>
+          </div>
+        </details>
       </div>
-
       <div class="field">
         <label>Status</label>
-        <select multiple size="3" [(ngModel)]="resultadosAuditoriaSelecionados">
-          <option value="">Todos</option>
-          <option value="SUCESSO">Sucesso</option>
-          <option value="ERRO">Erro</option>
-        </select>
+        <details class="multi-filter audit-multi-filter">
+          <summary>{{ resumoFiltroAuditoria('status') }}</summary>
+          <div class="filter-options">
+            <label><input type="checkbox" [checked]="!filtroStatusAuditoria" (change)="filtroStatusAuditoria = ''" />Todos os resultados</label>
+            <label *ngFor="let opcao of opcoesStatusAuditoria"><input type="checkbox" [checked]="auditoriaSelecionada('status', opcao.valor)" (change)="alternarFiltroAuditoria('status', opcao.valor)" />{{ opcao.nome }}</label>
+          </div>
+        </details>
       </div>
 
       <div class="field small-field">
-        <label>Limite</label>
+        <label>Por página</label>
         <select [(ngModel)]="limiteAuditoria">
           <option [ngValue]="25">25</option>
           <option [ngValue]="50">50</option>
@@ -293,24 +289,26 @@
   <section class="audit-list">
     <div class="list-head">
       <div>
-        <span class="eyebrow">Ações do painel</span>
-        <strong><b>{{ acoesPainel.length }}</b> acoes exibidas</strong>
+        <span class="eyebrow">Acessos e ações do painel</span>
+        <strong><b>{{ totalAcoesAuditoria }}</b> registros · {{ acoesPainel.length }} nesta página</strong>
       </div>
       <span class="loading-pill" *ngIf="carregandoAuditoria && acoesPainel.length">Atualizando dados...</span>
       <span class="loading-pill" *ngIf="ultimaAtualizacaoAuditoria">Atualizado {{ ultimaAtualizacaoAuditoria | date:'HH:mm:ss' }}</span>
     </div>
 
-    <div *ngIf="carregandoAuditoria && !acoesPainel.length" class="state-card">Carregando acoes...</div>
+    <ng-container *ngTemplateOutlet="paginacaoAuditoria"></ng-container>
+
+    <div *ngIf="carregandoAuditoria && !acoesPainel.length" class="state-card">Carregando registros...</div>
     <div *ngIf="!carregandoAuditoria && erroAuditoria" class="state-card error">{{ erroAuditoria }}</div>
-    <div *ngIf="!carregandoAuditoria && !erroAuditoria && acoesPainel.length === 0" class="state-card">Nenhuma acao encontrada.</div>
+    <div *ngIf="!carregandoAuditoria && !erroAuditoria && acoesPainel.length === 0" class="state-card">Nenhum registro encontrado.</div>
 
     <div class="table-card" *ngIf="!erroAuditoria && acoesPainel.length > 0">
       <table>
         <thead>
           <tr>
             <th>Data</th>
-            <th>Usuario</th>
-            <th>Acao</th>
+            <th>Usuário</th>
+            <th>Ação</th>
             <th>Alvo</th>
             <th>Status</th>
             <th>Mensagem</th>
@@ -321,7 +319,7 @@
           <tr *ngFor="let item of acoesPainel; trackBy: trackAcao">
             <td class="date-col">{{ item.criado_em | date:'dd/MM/yyyy HH:mm:ss' }}</td>
             <td>{{ item.usuario || '-' }}</td>
-            <td><span class="badge neutral">{{ item.acao }}</span></td>
+            <td><span class="badge neutral">{{ rotuloAcaoAuditoria(item.acao) }}</span></td>
             <td>{{ item.alvo || '-' }}</td>
             <td><span class="badge" [class.good]="item.status === 'SUCESSO'" [class.bad]="item.status === 'ERRO'">{{ item.status }}</span></td>
             <td class="message-col">
@@ -333,5 +331,27 @@
         </tbody>
       </table>
     </div>
+    <ng-container *ngTemplateOutlet="paginacaoAuditoria"></ng-container>
   </section>
 </section>
+
+<ng-template #paginacaoOperacional>
+  <nav class="pagination log-pagination" aria-label="Paginação dos eventos de serviços" *ngIf="totalRegistros > 0">
+    <label class="page-size">Por página
+      <select [(ngModel)]="itensPorPagina" (ngModelChange)="alterarItensPorPaginaLogs()" [disabled]="carregando">
+        <option [ngValue]="10">10</option><option [ngValue]="20">20</option><option [ngValue]="50">50</option><option [ngValue]="100">100</option>
+      </select>
+    </label>
+    <span>{{ totalRegistros }} eventos · Página {{ paginaAtual }} de {{ totalPaginas }}</span>
+    <button type="button" class="btn-secondary" (click)="paginaAnterior()" [disabled]="carregando || paginaAtual <= 1">Anterior</button>
+    <button type="button" class="btn-secondary" (click)="proximaPagina()" [disabled]="carregando || paginaAtual >= totalPaginas">Próxima</button>
+  </nav>
+</ng-template>
+
+<ng-template #paginacaoAuditoria>
+  <nav class="pagination log-pagination" aria-label="Paginação dos acessos e ações" *ngIf="totalAcoesAuditoria > 0">
+    <span>{{ totalAcoesAuditoria }} registros · Página {{ paginaAuditoria }} de {{ totalPaginasAuditoria }}</span>
+    <button type="button" class="btn-secondary" (click)="mudarPaginaAuditoria(-1)" [disabled]="carregandoAuditoria || paginaAuditoria <= 1">Anterior</button>
+    <button type="button" class="btn-secondary" (click)="mudarPaginaAuditoria(1)" [disabled]="carregandoAuditoria || paginaAuditoria >= totalPaginasAuditoria">Próxima</button>
+  </nav>
+</ng-template>

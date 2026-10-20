@@ -69,23 +69,106 @@
   </article>
 </section>
 
+<section class="generation-alert" [class.pending]="pendenciasPersistidas.length || resultadosPersistidos?.invalidos" aria-live="polite">
+  <div><strong>Arquivos gerados · resultados recentes</strong>
+    <p *ngIf="pendenciasPersistidas.length">Atenção: {{ pendenciasPersistidas.length }} pendência(s) de campanha/rede/UF. Há campanhas não geradas, parciais ou com falha técnica.</p>
+    <p *ngIf="!pendenciasPersistidas.length && !resultadosPersistidos?.invalidos && resultadosPersistidos?.arquivoEncontrado">Nenhuma pendência nos resultados disponíveis. Campanhas fora da execução não foram auditadas.</p>
+    <p *ngIf="!resultadosPersistidos?.arquivoEncontrado && !erroResultados">{{ consultandoResultados ? 'Consultando resultados...' : 'Nenhum resultado detalhado registrado ainda.' }}</p>
+    <p *ngIf="resultadosPersistidos?.invalidos">Há registros incompletos ou ilegíveis no log. Os resultados exibidos podem estar incompletos.</p>
+    <p *ngIf="erroResultados">{{ erroResultados }}</p>
+    <small *ngIf="resultadosPersistidos?.consultadoEm">Consultado {{ resultadosPersistidos.consultadoEm | date:'dd/MM/yyyy HH:mm:ss' }} · histórico limitado aos logs disponíveis</small>
+  </div>
+  <div class="title-actions"><button class="btn-secondary" (click)="carregarResultadosGeracao(true)" [disabled]="consultandoResultados">Atualizar resultados</button>
+    <button class="btn-primary" (click)="abrirArquivosGerados(true)" [disabled]="!resultadosPersistidos">Ver arquivos e motivos</button></div>
+</section>
+
 <div class="generated-files-backdrop" *ngIf="arquivosGeradosModalAberto" (click)="fecharArquivosGerados()">
-  <section class="generated-files-modal" (click)="$event.stopPropagation()">
-    <div class="editor-header">
-      <div>
-        <span class="eyebrow">Arquivos gerados</span>
-        <h3>{{ nomePadrao(servicoLogSelecionado) }}</h3>
-        <p>{{ arquivosGerados().length }} arquivo{{ arquivosGerados().length === 1 ? "" : "s" }} detectado{{ arquivosGerados().length === 1 ? "" : "s" }} no log atual.</p>
-      </div>
+  <section class="generated-files-modal" role="dialog" aria-modal="true" aria-labelledby="resultados-titulo" (click)="$event.stopPropagation()" (keydown.escape)="fecharArquivosGerados()">
+    <div class="results-header">
+      <div><h3 id="resultados-titulo">Resultados da geração</h3><p>{{ modalPersistido ? 'Resultados recentes' : nomePadrao(servicoLogSelecionado) }}</p></div>
       <button type="button" class="btn-secondary" (click)="fecharArquivosGerados()">Fechar</button>
     </div>
-
-    <div class="state-card empty" *ngIf="!arquivosGerados().length">Nenhum arquivo JSON identificado no log atual.</div>
-    <div class="generated-files-list" *ngIf="arquivosGerados().length">
-      <button type="button" *ngFor="let arquivo of arquivosGerados()" (click)="abrirArquivoGerado(arquivo)">
-        <strong>{{ arquivo }}</strong>
-        <span>Abrir em Arquivos Gerados</span>
-      </button>
+    <div class="results-tabs" aria-label="Exibir resultados">
+      <button type="button" [class.active]="abaResultados === 'arquivos'" [attr.aria-pressed]="abaResultados === 'arquivos'" (click)="trocarAbaResultados('arquivos')">Gerados <span>{{ arquivosModal().length }}</span></button>
+      <button type="button" [class.active]="abaResultados === 'pendencias'" [attr.aria-pressed]="abaResultados === 'pendencias'" (click)="trocarAbaResultados('pendencias')">Pendências <span class="pending-count" *ngIf="pendenciasModal().length">{{ pendenciasModal().length }}</span><span *ngIf="!pendenciasModal().length">0</span></button>
+    </div>
+    <div class="results-body">
+      <div *ngIf="pendenciasVisitadas" [hidden]="abaResultados !== 'pendencias'">
+        <div class="results-actions" *ngIf="pendenciasModal().length">
+          <p class="results-hint">Consulte os motivos por campanha.</p>
+          <button type="button" class="btn-secondary" (click)="alternarTodasPendencias()" [attr.aria-expanded]="pendenciasExpandidas">{{ pendenciasExpandidas ? 'Recolher todas' : 'Expandir todas' }}</button>
+        </div>
+        <div class="results-empty" *ngIf="!pendenciasModal().length">Nenhuma pendência nos resultados disponíveis.</div>
+        <div class="pending-rows">
+          <details class="generation-pending" [open]="pendenciasExpandidas" *ngFor="let item of pendenciasVisiveis(); trackBy: trackPendencia" (toggle)="registrarExpansao(item, $event)">
+            <summary>
+              <strong>{{ item.campanha }}</strong>
+              <span class="result-status" [class.technical]="item.status === 'ERRO'">{{ item.status === 'PARCIAL' ? 'Parcial' : (item.status === 'ERRO' ? 'Falha técnica' : 'Não gerada') }}</span>
+              <small class="result-network" [title]="item.nomeRede || 'Rede não identificada'">{{ item.nomeRede || 'Rede não identificada' }}</small>
+              <span class="detail-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="pending-detail" *ngIf="detalhesExpandidos.has(chaveDiagnostico(item))">
+              <small *ngIf="item.uf">Estados: {{ item.uf }}</small>
+              <small *ngIf="item.data">{{ item.data | date:'dd/MM/yyyy HH:mm:ss' }}</small>
+              <strong class="diagnostic-label">Registrado na execução</strong>
+              <ul><li *ngFor="let motivo of item.motivos">{{ motivo }}</li></ul>
+              <div class="current-diagnostic" *ngIf="diagnosticosCampanhas[chaveDiagnostico(item)] as consulta">
+                <strong class="diagnostic-label">Situação atual no banco</strong>
+                <span *ngIf="consulta.carregando">Conferindo vínculos da campanha...</span>
+                <p *ngIf="consulta.erro">{{ consulta.erro }} <button class="btn-secondary" (click)="tentarConferencia(item)">Tentar novamente</button></p>
+                <ng-container *ngIf="consulta.dados as dados">
+                  <small>Conferido {{ dados.consultadoEm | date:'dd/MM/yyyy HH:mm:ss' }}</small>
+                  <p *ngIf="!dados.redes.length">Campanha não localizada nas bases consultadas. Confira a rede e o código.</p>
+                  <div *ngFor="let r of dados.redes">
+                    <strong>{{ r.nome }} · {{ r.lojas }} vínculo(s) de loja · {{ r.produtos }} vínculo(s) de produto</strong>
+                    <div *ngFor="let d of r.diagnosticos">
+                      <span *ngIf="d.uf">UF {{ d.uf }}</span>
+                      <ul *ngIf="d.motivos.length"><li *ngFor="let motivo of d.motivos">{{ motivo }}</li></ul>
+                      <p *ngIf="!d.motivos.length">Sem bloqueios nos vínculos conferidos. O impedimento anterior pode ter sido corrigido.</p>
+                    </div>
+                    <div class="product-issues" *ngIf="r.produtosPendentes?.length">
+                      <strong>Produtos com pendência · base {{ r.base }}</strong>
+                      <div class="product-issue" *ngFor="let produto of r.produtosPendentes | slice:0:5">
+                        <strong>{{ produto.codigo }} · {{ produto.nome || 'Cadastro não encontrado' }}</strong>
+                        <small *ngIf="produto.ean">EAN {{ produto.ean }}</small>
+                        <p>{{ produto.motivo }}</p><small *ngIf="produto.ufs">UFs: {{ produto.ufs }}</small>
+                      </div>
+                      <details *ngIf="r.produtosPendentes.length > 5"><summary>Ver os outros {{ r.produtosPendentes.length - 5 }} produtos</summary>
+                        <div class="product-issue" *ngFor="let produto of r.produtosPendentes | slice:5">
+                          <strong>{{ produto.codigo }} · {{ produto.nome || 'Cadastro não encontrado' }}</strong><small *ngIf="produto.ean">EAN {{ produto.ean }}</small>
+                          <p>{{ produto.motivo }}</p><small *ngIf="produto.ufs">UFs: {{ produto.ufs }}</small>
+                        </div>
+                      </details>
+                      <small *ngIf="r.produtosPendentesLimitados">Exibindo os primeiros 200 produtos com pendência.</small>
+                      <small>Um produto descartado só impede o arquivo inteiro quando não restam combinações elegíveis.</small>
+                    </div>
+                    <p *ngFor="let observacao of r.observacoes">{{ observacao }}</p>
+                  </div>
+                  <small>{{ dados.aviso }}</small>
+                </ng-container>
+              </div>
+            </div>
+          </details>
+        </div>
+        <div class="results-pagination" *ngIf="totalPaginasPendencias > 1">
+          <button type="button" class="btn-secondary" [disabled]="paginaPendencias === 1" (click)="paginaPendencias = paginaPendencias - 1">Anterior</button>
+          <span>{{ paginaPendencias }} / {{ totalPaginasPendencias }}</span>
+          <button type="button" class="btn-secondary" [disabled]="paginaPendencias >= totalPaginasPendencias" (click)="paginaPendencias = paginaPendencias + 1">Próxima</button>
+        </div>
+      </div>
+      <div *ngIf="arquivosVisitados" [hidden]="abaResultados !== 'arquivos'">
+        <div class="results-empty" *ngIf="!arquivosModal().length">Nenhum arquivo gerado identificado.</div>
+        <div class="generated-files-list">
+          <button type="button" *ngFor="let arquivo of arquivosVisiveis(); trackBy: trackArquivo" (click)="abrirArquivoGerado(arquivo)" [attr.aria-label]="'Abrir arquivo ' + arquivo">
+            <strong>{{ arquivo }}</strong><span aria-hidden="true">↗</span>
+          </button>
+        </div>
+        <div class="results-pagination" *ngIf="totalPaginasArquivos > 1">
+          <button type="button" class="btn-secondary" [disabled]="paginaArquivos === 1" (click)="paginaArquivos = paginaArquivos - 1">Anterior</button>
+          <span>{{ paginaArquivos }} / {{ totalPaginasArquivos }}</span>
+          <button type="button" class="btn-secondary" [disabled]="paginaArquivos >= totalPaginasArquivos" (click)="paginaArquivos = paginaArquivos + 1">Próxima</button>
+        </div>
+      </div>
     </div>
   </section>
 </div>
@@ -190,6 +273,7 @@
       <button type="button" class="summary-file-card" (click)="abrirArquivosGerados()">
         <small>Arquivos gerados</small>
         <strong>{{ resumo.arquivos }}</strong>
+        <span class="generation-warning" *ngIf="pendenciasGeracao().length">Atenção: {{ pendenciasGeracao().length }} pendência(s) · ver motivos</span>
       </button>
     </div>
   </div>

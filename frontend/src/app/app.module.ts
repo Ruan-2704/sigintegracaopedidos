@@ -1,3 +1,4 @@
+import { RedesComponent } from './pages/redes/redes';
 import { NgModule } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 import { CommonModule } from '@angular/common';
@@ -6,6 +7,7 @@ import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
 import { RouterModule } from '@angular/router';
 
 import { AppComponent } from './app';
+import { ThemeToggleComponent } from './shared/theme-toggle/theme-toggle.component';
 import { routes } from './app.routes';
 import { AuthInterceptor } from './auth.interceptor';
 import { LayoutComponent } from './layout/layout/layout';
@@ -22,6 +24,8 @@ import { AuditoriaComponent } from './pages/auditoria/auditoria';
 @NgModule({
   declarations: [
     AppComponent,
+    RedesComponent,
+    ThemeToggleComponent,
     LayoutComponent,
     DashboardComponent,
     ArquivosComponent,

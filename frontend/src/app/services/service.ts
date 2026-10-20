@@ -17,6 +17,7 @@ export interface ApiResponse<T> {
 }
 
 export interface ListParams {
+  arquivo?: string;
   page?: number;
   limit?: number;
   search?: string;
@@ -332,4 +333,20 @@ export class IntegracaoService {
   detectarRedePedido(payload: any): Observable<ApiResponse<any>> {
     return this.postRaw<ApiResponse<any>>('/validador/detectar-rede', { payload });
   }
+  getRedesIntegracao(): Observable<ApiResponse<any>> { return this.getRaw<ApiResponse<any>>('/redes-integracao'); }
+  validarRedeIntegracao(codigo: number): Observable<ApiResponse<any>> {
+    return this.getRaw<ApiResponse<any>>(`/redes-integracao/${codigo}/validacao`);
+  }
+  salvarRedeIntegracao(config: any): Observable<ApiResponse<any>> {
+    return this.postRaw<ApiResponse<any>>('/redes-integracao', config);
+  }
+
+  getResultadosGeracao(force = false): Observable<ApiResponse<any>> {
+    return this.getRaw<ApiResponse<any>>('/servicos/geracao/resultados', { force });
+  }
+
+  getDiagnosticoCampanha(campanha: string, rede = ''): Observable<ApiResponse<any>> {
+    return this.getRaw<ApiResponse<any>>(`/servicos/geracao/campanhas/${encodeURIComponent(campanha)}/diagnostico${rede ? '?rede=' + encodeURIComponent(rede) : ''}`);
+  }
+
 }
