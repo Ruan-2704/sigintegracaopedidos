@@ -120,6 +120,8 @@ function deveNotificar(codigo, min = Number(process.env.ALERT_COOLDOWN_MINUTES |
 }
 
 function linhaIgnorada(linha) {
+  // Resultado comercial e alerta visual, nao falha tecnica nem novo e-mail.
+  if (String(linha).includes('[CAMPANHA_RESULTADO]') && !/"status"\s*:\s*"ERRO"/.test(linha)) return true;
   const lower = String(linha || '').toLowerCase();
   return PALAVRAS_IGNORAR.some((p) => lower.includes(p));
 }

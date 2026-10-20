@@ -52,7 +52,7 @@ const { iniciarMonitoramento } = require('./serviceMonitor');
 const { controlar: controlarPedidosSystemd } = require('./pedidosSystemd');
 const { enviarEmailAlerta } = require('./mailer');
 const { enviarAlertaOperacional, listarAlertas, garantirTabelaAlertas } = require('./alertService');
-const { garantirTabelaAcoesPainel, registrarAcaoPainel, listarAcoesPainel } = require('./auditService');
+const { garantirTabelaAcoesPainel, registrarAcaoPainel, listarAcoesPainelPaginadas } = require('./auditService');
 const {
   garantirTabelaServicosLogs,
   registrarServicoLog,
@@ -62,6 +62,7 @@ const { detectarErroLog } = require('./serviceMonitor');
 const { criarCache, cacheValido, salvarCache } = require('./cacheService');
 
 const pool = require('./db');
+const redesService = require('./redesService').criarRedesService(pool);
 const { validarPedido } = require('./pedidoValidator');
 
 const app = express();
@@ -260,7 +261,7 @@ function contextoLogServico(req, chave) {
   };
 }
 
-function timeoutPromise(promise, ms, label = 'operaÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o') {
+function timeoutPromise(promise, ms, label = 'operação') {
   let timer;
 
   const limite = new Promise((_, reject) => {
@@ -329,7 +330,7 @@ async function safePidsServico(chave) {
     return Array.isArray(pids) ? pids : [];
   } catch (error) {
     if (!erroSshTransitorio(error) || debugStatusSshAtivo()) {
-      console.warn(`Status do serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o ${chave} indisponÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­vel:`, error.message);
+      console.warn(`Status do serviço ${chave} indisponível:`, error.message);
     }
     return [];
   }
@@ -466,7 +467,7 @@ function atualizarStatusServicosEmBackground({ detectarQueda = true } = {}) {
 
   statusServicosRefreshPromise = atualizarStatusServicos({ detectarQueda })
     .catch((error) => {
-      console.error('Falha ao atualizar cache de status dos serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§os:', error.message);
+      console.error('Falha ao atualizar cache de status dos serviços:', error.message);
       return null;
     })
     .finally(() => {
@@ -596,7 +597,7 @@ function validarToken(token) {
 }
 
 function authMiddleware(req, res, next) {
-  const publicPaths = ['/', '/health', '/auth/login', '/monitoramento/pedidos'];
+  const publicPaths = ['/', '/health', '/auth/login', '/monitoramento/pedidos', '/monitoramento/geracao'];
 
   if (publicPaths.includes(req.path)) {
     return next();
@@ -611,7 +612,7 @@ function authMiddleware(req, res, next) {
   const payload = validarToken(token);
 
   if (!payload) {
-    return erroResponse(res, 401, 'Acesso nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o autorizado. FaÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§a login novamente.');
+    return erroResponse(res, 401, 'Acesso não autorizado. Faça login novamente.');
   }
 
   req.usuario = payload;
@@ -637,7 +638,7 @@ app.post('/auth/login', (req, res) => {
   if (!tokenInformado || tokenInformado !== PANEL_TOKEN) {
     registrarAcaoPainelSeguro({req,usuario:'nao_identificado',acao:'LOGIN_RECUSADO',alvo:'painel',status:'ERRO',
       mensagem:'Tentativa de acesso ao painel recusada.',detalhe:{motivo:'credencial_invalida'}});
-    return erroResponse(res, 401, 'Token invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido.');
+    return erroResponse(res, 401, 'Token inválido.');
   }
 
   registrarAcaoPainelSeguro({req,usuario:'admin',acao:'LOGIN_ACEITO',alvo:'painel',status:'SUCESSO',
@@ -662,6 +663,27 @@ app.post('/auth/login', (req, res) => {
 });
 
 app.use(authMiddleware);
+
+app.get('/redes-integracao', async (req, res) => {
+  try { res.json({ success: true, data: await redesService.listar() }); }
+  catch (error) { erroResponse(res, 500, 'Erro ao consultar redes da integração.', error); }
+});
+app.get('/redes-integracao/:codigo/validacao', async (req, res) => {
+  try { res.json({ success: true, data: await redesService.validar(req.params.codigo) }); }
+  catch (error) { erroResponse(res, error.status || 500, 'Erro ao verificar rede.', error); }
+});
+app.post('/redes-integracao', async (req, res) => {
+  try {
+    const data = await redesService.salvar(req.body || {});
+    let aviso = '';
+    try {
+      await registrarAcaoPainel({ req, acao: 'CONFIGURAR_REDE', alvo: String(data.codigo),
+        mensagem: 'Configuração da rede atualizada.', detalhe: data });
+    } catch (error) { aviso = 'Configuração salva, mas não foi possível registrar a auditoria.'; console.error(aviso, error.message); }
+    res.json({ success: true, data, message: aviso || 'Configuração salva. A geração usará a opção na próxima execução com o gerador atualizado.' });
+  } catch (error) { erroResponse(res, error.status || 500, 'Não foi possível salvar a rede.', error); }
+});
+
 
 function executarComando(comando, args = [], options = {}) {
   return new Promise((resolve) => {
@@ -723,17 +745,17 @@ function validarServicoScript(chave) {
   const servico = SERVICOS[chave];
 
   if (!servico || !servico.script) {
-    throw new Error('ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido para execuÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o de script.');
+    throw new Error('Serviço inválido para execução de script.');
   }
 
   const scriptPath = path.join(SIG_FOLDER, servico.script);
 
   if (!fs.existsSync(SIG_FOLDER)) {
-    throw new Error(`DiretÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³rio nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o encontrado: ${SIG_FOLDER}`);
+    throw new Error(`Diretório não encontrado: ${SIG_FOLDER}`);
   }
 
   if (!fs.existsSync(scriptPath)) {
-    throw new Error(`Script nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o encontrado: ${scriptPath}`);
+    throw new Error(`Script não encontrado: ${scriptPath}`);
   }
 
   return { servico, scriptPath };
@@ -746,7 +768,7 @@ function iniciarScript(chave) {
     const atual = processos.get(chave);
 
     if (!atual.killed) {
-      throw new Error(`${servico.nome} jÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ estÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ em execuÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o pelo painel. PID: ${atual.pid}`);
+      throw new Error(`${servico.nome} já está em execução pelo painel. PID: ${atual.pid}`);
     }
   }
 
@@ -1036,7 +1058,7 @@ app.get('/health', async (req, res) => {
 });
 
 /* =========================
-   OPERACIONAL / SERVIÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¡OS
+   OPERACIONAL / SERVIÇOS
 ========================= */
 
 // Estado minimo publico, como /health; nao expoe PIDs, hosts ou comandos.
@@ -1044,6 +1066,35 @@ app.get('/monitoramento/pedidos', async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const data = await require('./pedidosStatusMonitor').consultar();
   return res.json({ success: true, data });
+});
+
+const diagnosticoCampanha = require('./campanhaDiagnostico').criarDiagnostico(pool);
+app.get('/servicos/geracao/campanhas/:campanha/diagnostico', authMiddleware, async (req, res) => {
+  try { return res.json({ success: true, data: await diagnosticoCampanha.consultar(req.params.campanha, req.query.rede) }); }
+  catch (error) { return erroResponse(res, error.status || 500, 'Não foi possível conferir os dados atuais da campanha.', error); }
+});
+
+let resultadosGeracaoCache = null;
+let consultaResultadosGeracao = null;
+async function obterResultadosGeracao(force = false) {
+  if (!force && resultadosGeracaoCache && Date.now() - resultadosGeracaoCache.ts < 60000) return resultadosGeracaoCache.data;
+  if (consultaResultadosGeracao) return consultaResultadosGeracao;
+  consultaResultadosGeracao = (async () => {
+    const leitura = await require('./remoteExecution').lerResultadosGeracao();
+    const data = { ...require('./geracaoResultados').resumirResultados(leitura.content), arquivoEncontrado: leitura.encontrado, consultadoEm: new Date().toISOString() };
+    resultadosGeracaoCache = { ts: Date.now(), data }; return data;
+  })();
+  try { return await consultaResultadosGeracao; } finally { consultaResultadosGeracao = null; }
+}
+app.get('/servicos/geracao/resultados', authMiddleware, async (req, res) => {
+  try { return res.json({ success: true, data: await obterResultadosGeracao(String(req.query.force) === 'true') }); }
+  catch (error) { return erroResponse(res, 500, 'Não foi possível consultar os resultados da geração.', error); }
+});
+// Resumo publico de monitoramento: nao expoe IDs, produtos, bases nem motivos.
+app.get('/monitoramento/geracao', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try { return res.json({ success: true, data: require('./geracaoMonitorResumo').resumoMonitoramento(await obterResultadosGeracao()) }); }
+  catch (_) { return res.json({ success: true, data: { status:'INDISPONIVEL', verificadoEm:new Date().toISOString(), quantidade:null, assinatura:null, ultimaOcorrencia:null, escopo:'RESULTADOS_RECENTES' } }); }
 });
 
 app.get('/servicos/status', authMiddleware, async (req, res) => {
@@ -1065,7 +1116,7 @@ app.get('/servicos/status', authMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
-    return erroResponse(res, 500, 'Erro ao consultar status dos serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§os', error);
+    return erroResponse(res, 500, 'Erro ao consultar status dos serviços', error);
   }
 });
 
@@ -1079,14 +1130,14 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
       req,
       acao: 'INICIAR_SERVICO',
       alvo: 'geracao',
-      mensagem: 'GeraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada pelo painel.',
+      mensagem: 'Geração iniciada pelo painel.',
       detalhe: result,
     });
     registrarInicioServico(req, 'geracao', result);
 
     return res.json({
       success: true,
-      message: 'GeraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada com sucesso',
+      message: 'Geração iniciada com sucesso',
       data: result,
     });
   } catch (error) {
@@ -1095,7 +1146,7 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
       acao: 'INICIAR_SERVICO',
       alvo: 'geracao',
       status: 'ERRO',
-      mensagem: 'Erro ao iniciar geraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o.',
+      mensagem: 'Erro ao iniciar geração.',
       detalhe: error.stack || error.message,
     });
     registrarErroInicioServico(req, 'geracao', error);
@@ -1103,7 +1154,7 @@ app.post('/servicos/geracao/start', authMiddleware, async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao iniciar geraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o',
+      message: 'Erro ao iniciar geração',
       error: error.message,
     });
   }
@@ -1119,14 +1170,14 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
       req,
       acao: 'INICIAR_SERVICO',
       alvo: 'geracao',
-      mensagem: 'GeraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada pelo painel.',
+      mensagem: 'Geração iniciada pelo painel.',
       detalhe: result,
     });
     registrarInicioServico(req, 'geracao', result);
 
     return res.json({
       success: true,
-      message: 'GeraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada com sucesso',
+      message: 'Geração iniciada com sucesso',
       data: result,
     });
   } catch (error) {
@@ -1135,7 +1186,7 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
       acao: 'INICIAR_SERVICO',
       alvo: 'geracao',
       status: 'ERRO',
-      mensagem: 'Erro ao iniciar geraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o.',
+      mensagem: 'Erro ao iniciar geração.',
       detalhe: error.stack || error.message,
     });
     registrarErroInicioServico(req, 'geracao', error);
@@ -1143,7 +1194,7 @@ app.post('/servicos/geracao/iniciar', authMiddleware, async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao iniciar geraÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o',
+      message: 'Erro ao iniciar geração',
       error: error.message,
     });
   }
@@ -1159,14 +1210,14 @@ app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
       req,
       acao: 'INICIAR_SERVICO',
       alvo: 'exclusao',
-      mensagem: 'ExclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada pelo painel.',
+      mensagem: 'Exclusão iniciada pelo painel.',
       detalhe: result,
     });
     registrarInicioServico(req, 'exclusao', result);
 
     return res.json({
       success: true,
-      message: 'ExclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada com sucesso',
+      message: 'Exclusão iniciada com sucesso',
       data: result,
     });
   } catch (error) {
@@ -1175,14 +1226,14 @@ app.post('/servicos/exclusao/start', authMiddleware, async (req, res) => {
       acao: 'INICIAR_SERVICO',
       alvo: 'exclusao',
       status: 'ERRO',
-      mensagem: 'Erro ao iniciar exclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o.',
+      mensagem: 'Erro ao iniciar exclusão.',
       detalhe: error.stack || error.message,
     });
     registrarErroInicioServico(req, 'exclusao', error);
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao iniciar exclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o',
+      message: 'Erro ao iniciar exclusão',
       error: error.message,
     });
   }
@@ -1198,14 +1249,14 @@ app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
       req,
       acao: 'INICIAR_SERVICO',
       alvo: 'exclusao',
-      mensagem: 'ExclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada pelo painel.',
+      mensagem: 'Exclusão iniciada pelo painel.',
       detalhe: result,
     });
     registrarInicioServico(req, 'exclusao', result);
 
     return res.json({
       success: true,
-      message: 'ExclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o iniciada com sucesso',
+      message: 'Exclusão iniciada com sucesso',
       data: result,
     });
   } catch (error) {
@@ -1214,14 +1265,14 @@ app.post('/servicos/exclusao/iniciar', authMiddleware, async (req, res) => {
       acao: 'INICIAR_SERVICO',
       alvo: 'exclusao',
       status: 'ERRO',
-      mensagem: 'Erro ao iniciar exclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o.',
+      mensagem: 'Erro ao iniciar exclusão.',
       detalhe: error.stack || error.message,
     });
     registrarErroInicioServico(req, 'exclusao', error);
 
     return res.status(500).json({
       success: false,
-      message: 'Erro ao iniciar exclusÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o',
+      message: 'Erro ao iniciar exclusão',
       error: error.message,
     });
   }
@@ -1311,7 +1362,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
     const servico = SERVICOS[chave];
 
     if (!servico) {
-      return erroResponse(res, 400, 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido.');
+      return erroResponse(res, 400, 'Serviço inválido.');
     }
 
     const target = alvoServico(chave);
@@ -1336,7 +1387,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
 
     escreverLog(
       chave,
-      `Parada solicitada pelo painel. ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o=${chave}, target=${target}, porta=${servico.porta}, PIDs antes=${
+      `Parada solicitada pelo painel. Serviço=${chave}, target=${target}, porta=${servico.porta}, PIDs antes=${
         pidsAntes.join(', ') || '-'
       }, PIDs encerrados=${(pidsEncerrados || []).join(', ') || '-'}, PIDs depois=${
         pidsDepois.join(', ') || '-'
@@ -1349,7 +1400,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       mensagem: pidsAntes.length
         ? pidsDepois.length
           ? 'Parada solicitada, mas ainda existem processos ativos.'
-          : 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o parado com sucesso.'
+          : 'Serviço parado com sucesso.'
         : 'Nenhum processo ativo encontrado para parar.',
       detalhe: {
         target,
@@ -1367,7 +1418,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       mensagem: pidsAntes.length
         ? pidsDepois.length
           ? 'Parada solicitada, mas ainda existem processos ativos.'
-          : 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o parado com sucesso.'
+          : 'Serviço parado com sucesso.'
         : 'Nenhum processo ativo encontrado para parar.',
       detalhe: {
         target,
@@ -1385,13 +1436,13 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
         servico: servico.nome,
         tipo: 'SERVICO_PARADO_MANUALMENTE',
         severidade: 'INFO',
-        mensagem: `ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o ${servico.nome} parado manualmente pelo painel.`,
+        mensagem: `Serviço ${servico.nome} parado manualmente pelo painel.`,
         detalhe: `PIDs antes: ${pidsAntes.join(', ') || '-'} | PIDs encerrados: ${
           (pidsEncerrados || []).join(', ') || '-'
         } | PIDs depois: ${pidsDepois.join(', ') || '-'}`,
         servidor: servidorServico(chave),
         porta: servico.porta,
-        assunto: `ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o parado manualmente - ${servico.nome}`,
+        assunto: `Serviço parado manualmente - ${servico.nome}`,
       }).catch((error) => {
         console.error('Falha ao registrar/enviar alerta de parada manual:', error.message);
       });
@@ -1402,7 +1453,7 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       message: pidsAntes.length
         ? pidsDepois.length
           ? 'Parada solicitada, mas ainda existem processos ativos. Aguarde e atualize novamente.'
-          : 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o parado com sucesso.'
+          : 'Serviço parado com sucesso.'
         : 'Nenhum processo ativo encontrado para parar.',
       data: {
         servico: chave,
@@ -1420,18 +1471,18 @@ app.post('/servicos/:servico/stop', authMiddleware, async (req, res) => {
       acao: 'PARAR_SERVICO',
       alvo: req.params.servico,
       status: 'ERRO',
-      mensagem: 'Erro ao parar serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o.',
+      mensagem: 'Erro ao parar serviço.',
       detalhe: error.stack || error.message,
     });
     registrarServicoLogSeguro(eventoServicoPayload(req.params.servico, {
       req,
       tipo: 'PARAR_SERVICO',
       status: 'ERRO',
-      mensagem: 'Erro ao parar serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o.',
+      mensagem: 'Erro ao parar serviço.',
       detalhe: error.stack || error.message,
     }));
 
-    return erroResponse(res, 500, 'Erro ao parar serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o', error);
+    return erroResponse(res, 500, 'Erro ao parar serviço', error);
   }
 });
 
@@ -1547,7 +1598,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
     } else {
       return res.status(400).json({
         success: false,
-        message: 'ServiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido',
+        message: 'Serviço inválido',
       });
     }
 
@@ -1559,7 +1610,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
         req,
         tipo: 'CONSULTA_LOG',
         status: 'INFO',
-        mensagem: `Log do serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o consultado pelo painel a partir do cache (${limit} linhas).`,
+        mensagem: `Log do serviço consultado pelo painel a partir do cache (${limit} linhas).`,
         detalhe: {
           linhas: cache.content.split('\n').filter(Boolean).length,
           target,
@@ -1596,7 +1647,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
       req,
       tipo: 'CONSULTA_LOG',
       status: detectarErroLog(content) ? 'ALERTA' : 'SUCESSO',
-      mensagem: `Log do serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o consultado pelo painel (${limit} linhas).`,
+      mensagem: `Log do serviço consultado pelo painel (${limit} linhas).`,
       detalhe: {
         linhas: content.split('\n').filter(Boolean).length,
         target,
@@ -1629,7 +1680,7 @@ app.get('/servicos/:servico/logs', authMiddleware, async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: 'Erro ao ler log do serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§o',
+      message: 'Erro ao ler log do serviço',
       error: error.message,
     });
   }
@@ -1654,7 +1705,7 @@ app.get('/servicos/logs/eventos', authMiddleware, async (req, res) => {
       meta: payload.meta,
     });
   } catch (error) {
-    return erroResponse(res, 500, 'Erro ao buscar eventos dos serviÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§os', error);
+    return erroResponse(res, 500, 'Erro ao buscar eventos dos serviços', error);
   }
 });
 
@@ -1872,39 +1923,21 @@ app.post('/cron', authMiddleware, async (req, res) => {
 
 app.get('/painel/acoes', authMiddleware, async (req, res) => {
   try {
-    const data = await listarAcoesPainel({
+    const resultado = await listarAcoesPainelPaginadas({
+      page: req.query.page,
       limit: req.query.limit,
       acao: req.query.acao,
       status: req.query.status,
     });
-
-    return res.json({
-      success: true,
-      data,
-      meta: {
-        total: data.length,
-      },
-    });
+    return res.json({ success: true, data: resultado.rows, meta: resultado.meta });
   } catch (error) {
-    return erroResponse(res, 500, 'Erro ao listar aÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âµes do painel', error);
+    return erroResponse(res, 500, 'Erro ao listar ações do painel', error);
   }
 });
 
 /* =========================
    DASHBOARD
 ========================= */
-
-const REDES_ALIAS = {
-  redecomprecerto: 'Grupo Compre Certo',
-  drogarede: 'Droga Rede',
-  nossarede: 'Nossa Rede',
-  farmelhor: 'FarMelhor',
-  redefarma: 'RedeFarma',
-  redemgfarma: 'Rede MG Farma',
-  mercaweb: 'Merca Web',
-  vidafarmacias: 'Vida Farmacias',
-  grupoadmpharma: 'Grupo ADM Pharma',
-};
 
 const VALIDADOR_TABELAS_REFERENCIA = [
   'farmacias',
@@ -1920,15 +1953,16 @@ function onlyDigitsLocal(value) {
   return String(value ?? '').replace(/\D/g, '');
 }
 
-function schemasValidador() {
-  return Object.keys(REDES_ALIAS);
+async function schemasValidador() {
+  return (await redesService.redesValidador()).map(r => r.schemaNome);
 }
 
 async function buscarRedeClientePorCnpj(cnpjCliente) {
   const cnpj = onlyDigitsLocal(cnpjCliente);
   if (!cnpj) return null;
 
-  for (const schema of schemasValidador()) {
+  const redesConfiguradas = await redesService.redesValidador();
+  for (const schema of redesConfiguradas.map(r => r.schemaNome)) {
     try {
       const [rows] = await queryComTimeout(
         `
@@ -1941,7 +1975,7 @@ async function buscarRedeClientePorCnpj(cnpjCliente) {
         WHERE REPLACE(REPLACE(REPLACE(FAR_CNPJ, '.', ''), '/', ''), '-', '') = ?
         LIMIT 1
         `,
-        [schema, REDES_ALIAS[schema] || schema, cnpj]
+        [schema, redesConfiguradas.find(r => r.schemaNome === schema)?.nome || schema, cnpj]
       );
 
       if (rows?.[0]) return rows[0];
@@ -1966,7 +2000,9 @@ async function enriquecerPedidoComRedeCliente(pedido) {
 }
 
 async function listarMetadadosValidador() {
-  const schemas = schemasValidador();
+  const redesConfiguradas = await redesService.redesValidador();
+  const schemas = redesConfiguradas.map(r => r.schemaNome);
+  if (!schemas.length) return [];
   const placeholders = schemas.map(() => '?').join(', ');
 
   const [rows] = await queryComTimeout(
@@ -1997,7 +2033,7 @@ async function listarMetadadosValidador() {
 
   return schemas.map((schema) => ({
     schema,
-    nome: REDES_ALIAS[schema] || schema,
+    nome: redesConfiguradas.find(r => r.schemaNome === schema)?.nome || schema,
     tabelas: tabelasPorSchema.get(schema) || [],
   }));
 }
@@ -2006,7 +2042,8 @@ async function detectarRedeValidador(payload) {
   const info = payload?.informacoes || payload || {};
   const cnpjCliente = onlyDigitsLocal(info.cnpjCliente || info.CnpjCliente || payload?.cnpjCliente || payload?.CnpjCliente);
   const idCampanha = String(info.idCampanha || info.IdCampanha || payload?.idCampanha || payload?.IdCampanha || '').trim();
-  const schemas = schemasValidador();
+  const redesConfiguradas = await redesService.redesValidador();
+  const schemas = redesConfiguradas.map(r => r.schemaNome);
   const candidatos = [];
 
   for (const schema of schemas) {
@@ -2037,7 +2074,7 @@ async function detectarRedeValidador(payload) {
 
       candidatos.push({
         schema,
-        nome: REDES_ALIAS[schema] || schema,
+        nome: redesConfiguradas.find(r => r.schemaNome === schema)?.nome || schema,
         score,
         evidencias: {
           cnpjCliente: lojasCnpj,
@@ -2047,7 +2084,7 @@ async function detectarRedeValidador(payload) {
     } catch (error) {
       candidatos.push({
         schema,
-        nome: REDES_ALIAS[schema] || schema,
+        nome: redesConfiguradas.find(r => r.schemaNome === schema)?.nome || schema,
         score: 0,
         erro: error.message,
         evidencias: {
@@ -2352,11 +2389,15 @@ app.get('/dashboard', async (req, res) => {
    ARQUIVOS DO BUCKET
 ========================= */
 
+const consultaArquivoSelecionado = require('./arquivoSelecionado').criarConsultaArquivo(storage.bucket(BUCKET_NAME), formatarArquivo);
+
 app.get('/arquivos', async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req, 20, 200);
     const arquivos = filtrarArquivos(
-      await listarArquivosBucketCached({ force: String(req.query.force || 'false') === 'true' }),
+      req.query.arquivo
+        ? await consultaArquivoSelecionado.buscar(req.query.arquivo, String(req.query.force) === 'true')
+        : await listarArquivosBucketCached({ force: String(req.query.force || 'false') === 'true' }),
       req.query.search
     );
 
@@ -2371,7 +2412,7 @@ app.get('/arquivos', async (req, res) => {
       },
     });
   } catch (error) {
-    return erroResponse(res, 500, 'Erro ao listar arquivos do bucket', error);
+    return erroResponse(res, error.status || 500, 'Erro ao listar arquivos do bucket', error);
   }
 });
 
@@ -2380,14 +2421,14 @@ app.get('/arquivos/:nomeArquivo/preview', async (req, res) => {
     const nomeArquivo = decodeURIComponent(req.params.nomeArquivo || '');
 
     if (!nomeArquivo.toLowerCase().endsWith('.json')) {
-      return erroResponse(res, 400, 'Arquivo invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido');
+      return erroResponse(res, 400, 'Arquivo inválido');
     }
 
     const file = storage.bucket(BUCKET_NAME).file(nomeArquivo);
     const [exists] = await file.exists();
 
     if (!exists) {
-      return erroResponse(res, 404, 'Arquivo nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o encontrado no bucket');
+      return erroResponse(res, 404, 'Arquivo não encontrado no bucket');
     }
 
     const [buffer] = await file.download();
@@ -2418,22 +2459,23 @@ app.delete('/arquivos/:nomeArquivo', async (req, res) => {
     const nomeArquivo = decodeURIComponent(req.params.nomeArquivo || '');
 
     if (!nomeArquivo.toLowerCase().endsWith('.json')) {
-      return erroResponse(res, 400, 'Arquivo invÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido');
+      return erroResponse(res, 400, 'Arquivo inválido');
     }
 
     const file = storage.bucket(BUCKET_NAME).file(nomeArquivo);
     const [exists] = await file.exists();
 
     if (!exists) {
-      return erroResponse(res, 404, 'Arquivo nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o encontrado no bucket');
+      return erroResponse(res, 404, 'Arquivo não encontrado no bucket');
     }
 
     await file.delete();
+    consultaArquivoSelecionado.invalidar(nomeArquivo);
     registrarAcaoPainelSeguro({
       req,
       acao: 'EXCLUIR_ARQUIVO',
       alvo: nomeArquivo,
-      mensagem: 'Arquivo excluÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­do pelo painel.',
+      mensagem: 'Arquivo excluído pelo painel.',
       detalhe: {
         bucket: BUCKET_NAME,
         nomeArquivo,
@@ -2442,7 +2484,7 @@ app.delete('/arquivos/:nomeArquivo', async (req, res) => {
 
     return res.json({
       success: true,
-      message: 'Arquivo excluÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­do com sucesso',
+      message: 'Arquivo excluído com sucesso',
       data: {
         nomeArquivo,
       },
@@ -2699,7 +2741,7 @@ app.get('/logs', async (req, res) => {
     const arquivos = (await listarArquivosBucketCached({ force })).slice(0, 100).map((arquivo) => ({
       tipo: 'ARQUIVO_GERADO',
       status: 'SUCESSO',
-      descricao: `Arquivo ${arquivo.nomeArquivo} disponÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­vel no bucket`,
+      descricao: `Arquivo ${arquivo.nomeArquivo} disponível no bucket`,
       origem: 'BUCKET',
       pedidoIntegrador: null,
       campanha: arquivo.campanha,
@@ -2943,6 +2985,9 @@ app.post('/validador/pedido', authMiddleware, async (req, res) => {
     const rede = req.body?.rede || req.query?.rede || process.env.VALIDADOR_REDE_DEFAULT || 'redecomprecerto';
     const validarBanco = req.body?.validarBanco !== false;
 
+    if (validarBanco && !(await schemasValidador()).includes(rede)) {
+      return erroResponse(res, 400, 'Rede não habilitada para o validador. Verifique Redes da integração.');
+    }
     const resultado = await validarPedido(payload, {
       pool,
       rede,
@@ -3059,7 +3104,7 @@ app.get('/debug/colunas/:tabela', async (req, res) => {
     const tabelasPermitidas = ['pedidoconfirmaintegracao', 'criafilecampanha', 'log_integracao_pedidos'];
 
     if (!tabelasPermitidas.includes(req.params.tabela)) {
-      return erroResponse(res, 400, 'Tabela nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o permitida');
+      return erroResponse(res, 400, 'Tabela não permitida');
     }
 
     const [rows] = await queryComTimeout(`SHOW COLUMNS FROM ${req.params.tabela}`);

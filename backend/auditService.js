@@ -61,40 +61,38 @@ async function registrarAcaoPainel({ req, usuario, acao, alvo, status = 'SUCESSO
   return result.insertId;
 }
 
-async function listarAcoesPainel({ limit = 50, acao, status } = {}) {
-  await garantirTabelaAcoesPainel();
-
-  const where = [];
-  const params = [];
-
-  if (acao) {
-    const acoes = String(acao).split(',').map(item=>item.trim()).filter(Boolean).slice(0,30);
-    if (acoes.length) { where.push('acao IN ('+acoes.map(()=>'?').join(',')+')'); params.push(...acoes); }
+function filtrosAcoesPainel(acao, status) {
+  const where = [], params = [];
+  for (const [coluna, valor, maximo] of [['acao', acao, 30], ['status', status, 10]]) {
+    const valores = String(valor || '').split(',').map(item => item.trim()).filter(Boolean).slice(0, maximo);
+    if (valores.length) {
+      where.push(coluna + ' IN (' + valores.map(() => '?').join(',') + ')');
+      params.push(...valores);
+    }
   }
-
-  if (status) {
-    const statuses = String(status).split(',').map(item=>item.trim()).filter(Boolean).slice(0,10);
-    if (statuses.length) { where.push('status IN ('+statuses.map(()=>'?').join(',')+')'); params.push(...statuses); }
-  }
-
-  params.push(Math.min(Math.max(Number(limit) || 50, 1), 200));
-
-  const [rows] = await pool.query(
-    `
-      SELECT id, usuario, acao, alvo, status, mensagem, detalhe, ip, criado_em
-      FROM painel_acoes
-      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-      ORDER BY criado_em DESC
-      LIMIT ?
-    `,
-    params
-  );
-
-  return rows;
+  return { whereSql: where.length ? 'WHERE ' + where.join(' AND ') : '', params };
 }
 
-module.exports = {
-  garantirTabelaAcoesPainel,
-  registrarAcaoPainel,
-  listarAcoesPainel,
-};
+async function listarAcoesPainelPaginadas({ page = 1, limit = 50, acao, status } = {}) {
+  await garantirTabelaAcoesPainel();
+  const numeroLimite = Number(limit);
+  const tamanho = Number.isFinite(numeroLimite) ? Math.min(Math.max(Math.floor(numeroLimite) || 50, 1), 200) : 50;
+  const { whereSql, params } = filtrosAcoesPainel(acao, status);
+  const [contagem] = await pool.query('SELECT COUNT(*) AS total FROM painel_acoes ' + whereSql, params);
+  const total = Number(contagem[0]?.total || 0);
+  const totalPages = Math.max(1, Math.ceil(total / tamanho));
+  const numeroPagina = Number(page);
+  const pagina = Math.min(Math.max(Number.isFinite(numeroPagina) ? Math.floor(numeroPagina) : 1, 1), totalPages);
+  const [rows] = await pool.query(
+    'SELECT id, usuario, acao, alvo, status, mensagem, detalhe, ip, criado_em ' +
+    'FROM painel_acoes ' + whereSql + ' ORDER BY criado_em DESC, id DESC LIMIT ? OFFSET ?',
+    [...params, tamanho, (pagina - 1) * tamanho]
+  );
+  return { rows, meta: { page: pagina, limit: tamanho, total, totalPages } };
+}
+
+async function listarAcoesPainel(options) {
+  return (await listarAcoesPainelPaginadas(options)).rows;
+}
+
+module.exports = { garantirTabelaAcoesPainel, registrarAcaoPainel, listarAcoesPainel, listarAcoesPainelPaginadas };

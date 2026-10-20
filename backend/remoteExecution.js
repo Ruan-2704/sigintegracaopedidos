@@ -1085,7 +1085,35 @@ async function lerLogsCrontab(servicos = {}, linhas = 200, options = {}) {
   return itens;
 }
 
+async function lerResultadosGeracao() {
+  const diretorio = workdirFor('files');
+  if (!diretorio) throw new Error('Diretório de geração não configurado.');
+  const principal = isSshMode() ? path.posix.join(diretorio.replace(/\\/g, '/'), 'logs', 'geracao-campanhas.log') : path.join(diretorio, 'logs', 'geracao-campanhas.log');
+  const arquivos = [4,3,2,1,0].map(i => i ? `${principal}.${i}` : principal);
+  if (isSshMode()) {
+    const command = arquivos.map(f => `if [ -f ${shellEscape(f)} ]; then echo '__SIG_RESULTADOS_ENCONTRADO__'; tail -n 500 ${shellEscape(f)} || exit 1; fi`).join('\n');
+    const result = await runSshCommand(command, 'files');
+    if (result.code) throw new Error('Falha ao ler o arquivo de resultados no servidor.');
+    return { encontrado: String(result.stdout || '').includes('__SIG_RESULTADOS_ENCONTRADO__'), content: result.stdout || '' };
+  }
+  let encontrado = false; const partes = [];
+  for (const arquivo of arquivos) {
+    try {
+      const fd = fs.openSync(arquivo, 'r');
+      try {
+        const size = fs.fstatSync(fd).size;
+        const start = Math.max(0, size - 2 * 1024 * 1024);
+        const buffer = Buffer.alloc(size - start);
+        fs.readSync(fd, buffer, 0, buffer.length, start);
+        partes.push(buffer.toString('utf8').split(/\r?\n/).slice(-500).join('\n')); encontrado = true;
+      } finally { fs.closeSync(fd); }
+    } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  }
+  return { encontrado, content: partes.join('\n') };
+}
+
 module.exports = {
+  lerResultadosGeracao,
   listarCandidatosLog,
   executarScript,
   executarJar,

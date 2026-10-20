@@ -36,19 +36,19 @@ Nunca versionar:
 Alertas:
 
 ```sql
-backend/MIGRACAO_ALERTAS_INTEGRACAO.sql
+backend/migrations/MIGRACAO_ALERTAS_INTEGRACAO.sql
 ```
 
 Ações do painel:
 
 ```sql
-backend/MIGRACAO_ACOES_PAINEL.sql
+backend/migrations/MIGRACAO_ACOES_PAINEL.sql
 ```
 
 Índices recomendados para performance:
 
 ```sql
-backend/MIGRACAO_INDICES_PERFORMANCE.sql
+backend/migrations/MIGRACAO_INDICES_PERFORMANCE.sql
 ```
 
 Antes de aplicar índices em produção, conferir se já existem índices equivalentes.
