@@ -1,5 +1,5 @@
 export interface PendenciaGeracao { campanha: string; status: string; rede: string; uf: string; motivos: string[]; data?: string; nomeRede?: string; ufs?: string[]; }
-export function analisarResultadosGeracao(linhas: string[]): { arquivos: string[]; pendencias: PendenciaGeracao[] } {
+export function analisarResultadosGeracao(linhas: string[]): { arquivos: string[]; pendencias: PendenciaGeracao[]; redesPorArquivo: Record<string, string[]> } {
   const eventos = new Map<string, any>();
   const legados = new Set<string>();
   const contextos = new Map<string, { redes: string[]; semLojas: string[]; consultas: { rede: string; uf: string; tipo: string }[] }>();
@@ -50,12 +50,23 @@ export function analisarResultadosGeracao(linhas: string[]): { arquivos: string[
     // Evento estruturado prevalece sobre inferencias do log antigo.
     legados.delete(e.campanha + '.json');
     if (['GERADA','PARCIAL'].includes(e.status)) legados.add(e.campanha + '.json');
-    if (['NAO_GERADA','PARCIAL','ERRO'].includes(e.status)) {
+    if (['NAO_GERADA','ERRO'].includes(e.status)) {
       const problemas = e.problemas?.length ? e.problemas : [{ motivos: ['Sem motivo detalhado no log.'] }];
       for (const p of problemas) pendencias.push({ campanha:String(e.campanha), status:e.status, rede:p.rede || '', uf:p.uf || '', motivos:p.motivos || [], data:e.data });
     }
   }
-  return { arquivos: Array.from(legados).sort(), pendencias };
+  const redesPorArquivo: Record<string, string[]> = {};
+  for (const arquivo of legados) {
+    const codigo = arquivo.replace(/\.json$/, '');
+    const evento = eventos.get(codigo);
+    const codigos = [
+      ...(Array.isArray(evento?.redes) ? evento.redes : []),
+      ...(evento?.problemas || []).map((p: any) => p.rede),
+      ...(contextos.get(codigo)?.redes || [])
+    ].map(String).filter(rede => /^\d+$/.test(rede));
+    redesPorArquivo[arquivo] = Array.from(new Set(codigos));
+  }
+  return { arquivos: Array.from(legados).sort(), pendencias, redesPorArquivo };
 }
 
 // Uma linha por campanha/rede. A UF permanece apenas como contexto nos detalhes.

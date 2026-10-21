@@ -1077,14 +1077,23 @@ app.get('/servicos/geracao/campanhas/:campanha/diagnostico', authMiddleware, asy
 let resultadosGeracaoCache = null;
 let consultaResultadosGeracao = null;
 async function obterResultadosGeracao(force = false) {
-  if (!force && resultadosGeracaoCache && Date.now() - resultadosGeracaoCache.ts < 60000) return resultadosGeracaoCache.data;
-  if (consultaResultadosGeracao) return consultaResultadosGeracao;
+  // Reconsulta a configuracao mesmo com o log em cache: desativacao vale na proxima leitura.
+  const configuracao = await redesService.listar();
+  if (!configuracao.configuracaoDisponivel) throw new Error('Configuracao de redes indisponivel.');
+  const redesHabilitadas = configuracao.redes.filter(r => r.geracao && r.cadastroAtivo);
+  const habilitadas = redesHabilitadas.map(r => r.codigo);
+  const filtrar = data => {
+    const filtros = require('./geracaoResultados');
+    return filtros.filtrarCampanhasEncerradas(filtros.filtrarPendenciasRedes(data, habilitadas), redesHabilitadas, pool);
+  };
+  if (!force && resultadosGeracaoCache && Date.now() - resultadosGeracaoCache.ts < 60000) return filtrar(resultadosGeracaoCache.data);
+  if (consultaResultadosGeracao) return filtrar(await consultaResultadosGeracao);
   consultaResultadosGeracao = (async () => {
     const leitura = await require('./remoteExecution').lerResultadosGeracao();
     const data = { ...require('./geracaoResultados').resumirResultados(leitura.content), arquivoEncontrado: leitura.encontrado, consultadoEm: new Date().toISOString() };
     resultadosGeracaoCache = { ts: Date.now(), data }; return data;
   })();
-  try { return await consultaResultadosGeracao; } finally { consultaResultadosGeracao = null; }
+  try { return filtrar(await consultaResultadosGeracao); } finally { consultaResultadosGeracao = null; }
 }
 app.get('/servicos/geracao/resultados', authMiddleware, async (req, res) => {
   try { return res.json({ success: true, data: await obterResultadosGeracao(String(req.query.force) === 'true') }); }

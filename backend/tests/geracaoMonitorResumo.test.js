@@ -8,3 +8,6 @@ assert.notStrictEqual(resumoMonitoramento({...d,pendencias:[{...e,data:'2026-10-
 assert.strictEqual(resumoMonitoramento({...d,pendencias:[]}).quantidade,0);
 for(const x of [{...d,arquivoEncontrado:false},{...d,invalidos:1},{...d,resultados:[]}]){assert.strictEqual(resumoMonitoramento(x).status,'INDISPONIVEL');assert.strictEqual(resumoMonitoramento(x).quantidade,null);}
 console.log('OK monitor de geracao: resumo sem detalhes internos, assinatura por resultado, falha/arquivo ausente nao viram zero pendencias.');
+
+assert.strictEqual(resumoMonitoramento({...d,pendencias:[{...e,status:'PARCIAL'}]}).quantidade,0);
+assert.strictEqual(resumoMonitoramento({...d,pendencias:[{...e,status:'PARCIAL'}]}).assinatura,null);

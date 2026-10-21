@@ -71,7 +71,7 @@
 
 <section class="generation-alert" [class.pending]="pendenciasPersistidas.length || resultadosPersistidos?.invalidos" aria-live="polite">
   <div><strong>Arquivos gerados · resultados recentes</strong>
-    <p *ngIf="pendenciasPersistidas.length">Atenção: {{ pendenciasPersistidas.length }} pendência(s) de campanha/rede/UF. Há campanhas não geradas, parciais ou com falha técnica.</p>
+    <p *ngIf="pendenciasPersistidas.length">Atenção: {{ pendenciasPersistidas.length }} pendência(s) de campanha/rede/UF. Há campanhas não geradas ou com falha técnica.</p>
     <p *ngIf="!pendenciasPersistidas.length && !resultadosPersistidos?.invalidos && resultadosPersistidos?.arquivoEncontrado">Nenhuma pendência nos resultados disponíveis. Campanhas fora da execução não foram auditadas.</p>
     <p *ngIf="!resultadosPersistidos?.arquivoEncontrado && !erroResultados">{{ consultandoResultados ? 'Consultando resultados...' : 'Nenhum resultado detalhado registrado ainda.' }}</p>
     <p *ngIf="resultadosPersistidos?.invalidos">Há registros incompletos ou ilegíveis no log. Os resultados exibidos podem estar incompletos.</p>
@@ -103,13 +103,13 @@
           <details class="generation-pending" [open]="pendenciasExpandidas" *ngFor="let item of pendenciasVisiveis(); trackBy: trackPendencia" (toggle)="registrarExpansao(item, $event)">
             <summary>
               <strong>{{ item.campanha }}</strong>
-              <span class="result-status" [class.technical]="item.status === 'ERRO'">{{ item.status === 'PARCIAL' ? 'Parcial' : (item.status === 'ERRO' ? 'Falha técnica' : 'Não gerada') }}</span>
+              <span class="result-status" [class.technical]="item.status === 'ERRO'">{{ item.status === 'ERRO' ? 'Falha técnica' : 'Não gerada' }}</span>
               <small class="result-network" [title]="item.nomeRede || 'Rede não identificada'">{{ item.nomeRede || 'Rede não identificada' }}</small>
               <span class="detail-chevron" aria-hidden="true">⌄</span>
             </summary>
             <div class="pending-detail" *ngIf="detalhesExpandidos.has(chaveDiagnostico(item))">
               <small *ngIf="item.uf">Estados: {{ item.uf }}</small>
-              <small *ngIf="item.data">{{ item.data | date:'dd/MM/yyyy HH:mm:ss' }}</small>
+              <small class="attempt-date" *ngIf="item.data">Tentativa de geração: {{ item.data | date:'dd/MM/yyyy HH:mm:ss' }}</small>
               <strong class="diagnostic-label">Registrado na execução</strong>
               <ul><li *ngFor="let motivo of item.motivos">{{ motivo }}</li></ul>
               <div class="current-diagnostic" *ngIf="diagnosticosCampanhas[chaveDiagnostico(item)] as consulta">
@@ -117,7 +117,7 @@
                 <span *ngIf="consulta.carregando">Conferindo vínculos da campanha...</span>
                 <p *ngIf="consulta.erro">{{ consulta.erro }} <button class="btn-secondary" (click)="tentarConferencia(item)">Tentar novamente</button></p>
                 <ng-container *ngIf="consulta.dados as dados">
-                  <small>Conferido {{ dados.consultadoEm | date:'dd/MM/yyyy HH:mm:ss' }}</small>
+                  <small>Consulta atual no banco: {{ dados.consultadoEm | date:'dd/MM/yyyy HH:mm:ss' }}</small>
                   <p *ngIf="!dados.redes.length">Campanha não localizada nas bases consultadas. Confira a rede e o código.</p>
                   <div *ngFor="let r of dados.redes">
                     <strong>{{ r.nome }} · {{ r.lojas }} vínculo(s) de loja · {{ r.produtos }} vínculo(s) de produto</strong>
@@ -159,8 +159,8 @@
       <div *ngIf="arquivosVisitados" [hidden]="abaResultados !== 'arquivos'">
         <div class="results-empty" *ngIf="!arquivosModal().length">Nenhum arquivo gerado identificado.</div>
         <div class="generated-files-list">
-          <button type="button" *ngFor="let arquivo of arquivosVisiveis(); trackBy: trackArquivo" (click)="abrirArquivoGerado(arquivo)" [attr.aria-label]="'Abrir arquivo ' + arquivo">
-            <strong>{{ arquivo }}</strong><span aria-hidden="true">↗</span>
+          <button type="button" *ngFor="let arquivo of arquivosVisiveis(); trackBy: trackArquivo" (click)="abrirArquivoGerado(arquivo)" [attr.aria-label]="'Abrir arquivo ' + arquivo + ' da rede ' + nomeRedeArquivo(arquivo)">
+            <strong>{{ arquivo }}</strong><small class="generated-file-network" [title]="nomeRedeArquivo(arquivo)">{{ nomeRedeArquivo(arquivo) }}</small><span aria-hidden="true">↗</span>
           </button>
         </div>
         <div class="results-pagination" *ngIf="totalPaginasArquivos > 1">

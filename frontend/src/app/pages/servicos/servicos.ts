@@ -101,6 +101,8 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
   paginaArquivos = 1;
   readonly tamanhoResultados = 30;
   private nomesRedes: Record<string, string> = {};
+  private redesGeracaoHabilitadas: Set<string> | null = null;
+  private campanhasEncerradas = new Set<string>();
   private gruposFonte: PendenciaGeracao[] | null = null;
   private gruposNomes: Record<string, string> | null = null;
   private gruposModal: PendenciaGeracao[] = [];
@@ -110,6 +112,7 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
   private arquivosFonte: string[] | null = null;
   private arquivosPagina = 0;
   private arquivosCache: string[] = [];
+  private redesArquivosPersistidos: Record<string, string[]> = {};
   trocarAbaResultados(aba: 'arquivos' | 'pendencias'): void {
     this.abaResultados = aba;
     if (aba === 'arquivos') this.arquivosVisitados = true;
@@ -142,7 +145,10 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
       if (this.destruido) return;
       const nomes: Record<string, string> = {};
       for (const r of res.data?.catalogo || []) if (r.codigo != null && r.nome) nomes[String(r.codigo)] = r.nome;
-      this.nomesRedes = nomes; this.cdr.detectChanges();
+      this.nomesRedes = nomes;
+      this.redesGeracaoHabilitadas = res.data?.configuracaoDisponivel
+        ? new Set<string>((res.data.redes || []).filter((r: any) => r.geracao && r.cadastroAtivo).map((r: any) => String(r.codigo))) : null;
+      this.cdr.detectChanges();
     }, error: () => { /* O diagnostico pode fornecer o nome ao expandir. */ } });
   }
   resultadosPersistidos: any = null;
@@ -152,10 +158,15 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
   pendenciasPersistidas: PendenciaGeracao[] = [];
   carregarResultadosGeracao(force = false): void {
     if (this.consultandoResultados) return;
+    if (force) this.carregarNomesRedes();
     this.consultandoResultados = true;
     this.service.getResultadosGeracao(force).subscribe({ next: res => {
       this.resultadosPersistidos = res.data;
-      this.pendenciasPersistidas = agruparPendenciasGeracao(analisarResultadosGeracao((res.data.resultados || []).map((e: any) => '[CAMPANHA_RESULTADO] ' + JSON.stringify(e))).pendencias);
+      this.campanhasEncerradas = new Set<string>(res.data.campanhasEncerradas || []);
+      this.gruposFonte = null;
+      const analise = analisarResultadosGeracao((res.data.resultados || []).map((e: any) => '[CAMPANHA_RESULTADO] ' + JSON.stringify(e)));
+      this.pendenciasPersistidas = agruparPendenciasGeracao(analise.pendencias);
+      this.redesArquivosPersistidos = analise.redesPorArquivo;
       this.erroResultados = ''; this.consultandoResultados = false; this.cdr.detectChanges();
     }, error: () => {
       this.erroResultados = 'Não foi possível atualizar os resultados da geração. Os dados anteriores podem estar desatualizados.';
@@ -163,7 +174,7 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
     }});
   }
   private logsAnalisados: string[] | null = null;
-  private analiseLogs = { arquivos: [] as string[], pendencias: [] as PendenciaGeracao[] };
+  private analiseLogs = { arquivos: [] as string[], pendencias: [] as PendenciaGeracao[], redesPorArquivo: {} as Record<string, string[]> };
   private analisarLogs(): typeof this.analiseLogs {
     if (this.logsAnalisados !== this.logs) {
       this.logsAnalisados = this.logs;
@@ -176,11 +187,20 @@ export class ServicosComponent implements OnInit, OnDestroy, AfterViewChecked {
     const fonte = this.modalPersistido ? this.pendenciasPersistidas : this.pendenciasGeracao();
     if (this.gruposFonte !== fonte || this.gruposNomes !== this.nomesRedes) {
       this.gruposFonte = fonte; this.gruposNomes = this.nomesRedes;
-      this.gruposModal = agruparPendenciasGeracao(fonte, this.nomesRedes);
+      const habilitadas = this.redesGeracaoHabilitadas;
+      const ativas = fonte.filter(item =>
+        (!habilitadas || (habilitadas.size && (!item.rede || habilitadas.has(item.rede)))) &&
+        !this.campanhasEncerradas.has(item.rede + ':' + item.campanha));
+      this.gruposModal = agruparPendenciasGeracao(ativas, this.nomesRedes);
     }
     return this.gruposModal;
   }
   arquivosModal(): string[] { return this.modalPersistido ? (this.resultadosPersistidos?.arquivos || []) : this.arquivosGerados(); }
+  nomeRedeArquivo(arquivo: string): string {
+    const redes = this.modalPersistido ? this.redesArquivosPersistidos : this.analisarLogs().redesPorArquivo;
+    const nomes = (redes[arquivo] || []).map(codigo => this.nomesRedes[codigo] || 'Rede não identificada');
+    return Array.from(new Set(nomes)).join(', ') || 'Rede não identificada';
+  }
 
   private timer?: number;
   private logsStream?: EventSource;
