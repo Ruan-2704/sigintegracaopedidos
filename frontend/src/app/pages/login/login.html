@@ -6,7 +6,11 @@
       <label for="login-usuario">Usuário</label>
       <div class="input-line"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21v-2a6 6 0 0 0-6-6h-4a6 6 0 0 0-6 6v2M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0" /></svg><input id="login-usuario" name="usuario" [(ngModel)]="usuario" autocomplete="username" placeholder="Digite o usuário" /></div>
       <label for="login-senha">Senha</label>
-      <div class="input-line"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v11H4Zm4 0V6a4 4 0 0 1 8 0v4m-4 5v2" /></svg><input id="login-senha" name="token" [(ngModel)]="token" type="password" autocomplete="current-password" placeholder="Digite a senha" /></div>
+      <div class="input-line"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v11H4Zm4 0V6a4 4 0 0 1 8 0v4m-4 5v2" /></svg><input id="login-senha" class="password-input" name="token" [(ngModel)]="token" [type]="mostrarSenha ? 'text' : 'password'" autocomplete="current-password" placeholder="Digite a senha" />
+        <button class="password-toggle" type="button" (click)="mostrarSenha = !mostrarSenha" aria-controls="login-senha" [attr.aria-label]="mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'" [attr.title]="mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'" [attr.aria-pressed]="mostrarSenha">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /><path *ngIf="mostrarSenha" d="m3 3 18 18" /></svg>
+        </button>
+      </div>
       <button class="login-submit" type="submit" [disabled]="carregando || !token.trim()">{{ carregando ? 'Validando acesso...' : 'Acessar painel' }}</button>
       <div *ngIf="erro" class="erro" role="alert">{{ erro }}</div>
       <small class="version">SIG Cotação · Cotefácil / SmartPed</small>

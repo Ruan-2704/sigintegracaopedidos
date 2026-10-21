@@ -18,3 +18,9 @@ label { display: block; color: var(--sig-text-secondary); font-size: 13px; font-
 .erro { margin-top: 16px; padding: 12px; border: 1px solid var(--sig-danger-border); border-radius: 8px; background: var(--sig-danger-bg); color: var(--sig-danger); font-size: 13px; line-height: 1.5; }
 .version { display: block; margin-top: 24px; color: var(--sig-muted); text-align: center; font-size: 11px; }
 @media (max-width: 420px) { .login-card { padding: 26px 22px; } }
+
+.input-line .password-input { padding-right: 46px; }
+.input-line .password-toggle { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--sig-muted); cursor: pointer; }
+.input-line .password-toggle:hover { color: var(--sig-text); background: var(--sig-soft); }
+.input-line .password-toggle:focus-visible { outline: 2px solid var(--sig-link); outline-offset: 1px; }
+.input-line .password-toggle svg { position: static; transform: none; width: 18px; height: 18px; stroke: currentColor; }

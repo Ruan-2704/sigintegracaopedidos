@@ -13,6 +13,7 @@ export class LoginComponent {
   apiUrl = '';
   usuario = 'admin';
   token = '';
+  mostrarSenha = false;
   carregando = false;
   erro = '';
 
